@@ -190,9 +190,14 @@ Provide a clear and helpful answer."""
         ])
 
         # Build prompt
-        prompt = f"""You are a helpful AI assistant with access to a knowledge base. Use the following context to answer the user's question accurately and concisely.
+        prompt = f"""You are a helpful AI assistant with access to a knowledge base. Use ONLY the following context to answer the user's question.
 
-If you cannot find the answer in the context, say so clearly. Always cite which sources you used.
+CRITICAL RULES:
+- ONLY use information from the CONTEXT below
+- If the context doesn't contain the answer, say "I cannot find information about that in the uploaded documents"
+- DO NOT make up information or use external knowledge
+- DO NOT hallucinate or invent answers
+- Always cite which sources you used (e.g., "According to Source 1...")
 
 CONTEXT:
 {context}
@@ -201,7 +206,7 @@ CONTEXT:
 
 USER QUESTION: {query}
 
-Provide a detailed and accurate answer based on the context provided. Mention which sources you referenced."""
+Answer based ONLY on the context above. If the answer is not in the context, clearly state that."""
 
         # Call Groq API
         response = self._call_groq(prompt)
