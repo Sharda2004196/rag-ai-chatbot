@@ -17,7 +17,13 @@ A powerful Retrieval-Augmented Generation (RAG) chatbot with a beautiful web int
 - 🔍 **Smart Search** - Vector similarity search with Qdrant
 - 📚 **Source Citations** - See which documents were used for each answer
 
-## Demo
+## 🚀 Live Demo
+
+**Try it now:** [https://rag-ai-chatbot-0pyl.onrender.com](https://rag-ai-chatbot-0pyl.onrender.com)
+
+> Note: Free tier may take 50+ seconds to wake up after inactivity
+
+### Example Usage
 
 ```
 User: "What are the key features of Python?"
@@ -119,6 +125,8 @@ Navigate to: http://localhost:5000
 - Supported formats: PDF, DOCX, DOC, TXT, MD
 - Max file size: 16MB
 - Wait for "Ingested X chunks" confirmation
+
+**Important:** Each new document upload replaces the previous one. This ensures clean, accurate responses without data mixing.
 
 **Option B: Paste Text**
 - Paste text directly into the text area
@@ -328,6 +336,34 @@ def parse_new_format(file_path: str) -> str:
 ```
 
 ## Deployment
+
+### Deploy to Render (Recommended)
+
+This project is deployed on Render. To deploy your own instance:
+
+1. **Fork this repository** on GitHub
+
+2. **Sign up for Render** at https://render.com
+
+3. **Create a new Web Service**
+   - Connect your GitHub account
+   - Select your forked repository
+   - Render will auto-detect settings from `render.yaml`
+
+4. **Add Environment Variables** in Render dashboard:
+   ```
+   GROQ_API_KEY=your_groq_api_key
+   COHERE_API_KEY=your_cohere_api_key
+   QDRANT_URL=https://your-cluster.qdrant.io:6333
+   QDRANT_API_KEY=your_qdrant_api_key
+   ```
+
+5. **Deploy** - Render will automatically build and deploy your app
+
+**Important Notes:**
+- Free tier spins down after inactivity (50s wake-up time)
+- First deployment takes 3-5 minutes
+- Auto-deploys on every git push to main branch
 
 ### Deploy to Railway
 
