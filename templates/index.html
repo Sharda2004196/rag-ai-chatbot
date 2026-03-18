@@ -1,0 +1,448 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RAG AI Chatbot</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+
+        .container {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            max-width: 1400px;
+            width: 100%;
+            height: 90vh;
+        }
+
+        .panel {
+            background: white;
+            border-radius: 15px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .panel-header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            font-size: 20px;
+            font-weight: 600;
+        }
+
+        .panel-content {
+            flex: 1;
+            padding: 20px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* Ingest Panel */
+        .upload-area {
+            border: 3px dashed #667eea;
+            border-radius: 10px;
+            padding: 40px;
+            text-align: center;
+            margin-bottom: 20px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .upload-area:hover {
+            background: #f8f9ff;
+            border-color: #764ba2;
+        }
+
+        .upload-icon {
+            font-size: 48px;
+            margin-bottom: 10px;
+        }
+
+        textarea {
+            width: 100%;
+            min-height: 200px;
+            padding: 15px;
+            border: 2px solid #e0e0e0;
+            border-radius: 10px;
+            font-size: 14px;
+            resize: vertical;
+            font-family: inherit;
+        }
+
+        textarea:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .btn {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 12px 30px;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s;
+            margin-top: 15px;
+        }
+
+        .btn:hover {
+            transform: translateY(-2px);
+        }
+
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .status {
+            margin-top: 15px;
+            padding: 10px;
+            border-radius: 8px;
+            display: none;
+        }
+
+        .status.success {
+            background: #d4edda;
+            color: #155724;
+            display: block;
+        }
+
+        .status.error {
+            background: #f8d7da;
+            color: #721c24;
+            display: block;
+        }
+
+        /* Chat Panel */
+        .messages {
+            flex: 1;
+            overflow-y: auto;
+            margin-bottom: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        .message {
+            padding: 15px;
+            border-radius: 10px;
+            max-width: 80%;
+            animation: slideIn 0.3s;
+        }
+
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .message.user {
+            background: #667eea;
+            color: white;
+            align-self: flex-end;
+            margin-left: auto;
+        }
+
+        .message.bot {
+            background: #f0f0f0;
+            color: #333;
+            align-self: flex-start;
+        }
+
+        .message.bot .sources {
+            margin-top: 10px;
+            padding-top: 10px;
+            border-top: 1px solid #ddd;
+            font-size: 12px;
+            color: #666;
+        }
+
+        .input-area {
+            display: flex;
+            gap: 10px;
+        }
+
+        .input-area input {
+            flex: 1;
+            padding: 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 14px;
+        }
+
+        .input-area input:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .loading {
+            display: none;
+            text-align: center;
+            color: #667eea;
+            font-style: italic;
+        }
+
+        .loading.show {
+            display: block;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Document Ingest Panel -->
+        <div class="panel">
+            <div class="panel-header">
+                📄 Document Ingestion
+            </div>
+            <div class="panel-content">
+                <div class="upload-area" onclick="document.getElementById('fileInput').click()">
+                    <div class="upload-icon">📁</div>
+                    <div>Click to upload or drag & drop</div>
+                    <div style="font-size: 12px; color: #666; margin-top: 5px;">
+                        Supports: TXT, PDF, DOCX, MD
+                    </div>
+                    <input type="file" id="fileInput" style="display: none;" accept=".txt,.pdf,.docx,.md">
+                </div>
+
+                <div style="margin-bottom: 10px; font-weight: 600;">Or paste text directly:</div>
+                <textarea id="textInput" placeholder="Paste your document text here..."></textarea>
+
+                <button class="btn" onclick="ingestDocument()">
+                    📤 Ingest Document
+                </button>
+
+                <div id="ingestStatus" class="status"></div>
+            </div>
+        </div>
+
+        <!-- Chat Panel -->
+        <div class="panel">
+            <div class="panel-header">
+                💬 Chat with AI
+            </div>
+            <div class="panel-content">
+                <!-- Mode Toggle -->
+                <div style="margin-bottom: 15px; display: flex; gap: 10px; align-items: center;">
+                    <label style="font-weight: 600;">Mode:</label>
+                    <select id="chatMode" style="padding: 8px; border-radius: 5px; border: 2px solid #e0e0e0; font-size: 14px;">
+                        <option value="auto">Auto (RAG if documents available)</option>
+                        <option value="rag">RAG Only (Search documents)</option>
+                        <option value="general">General Chat (No documents)</option>
+                    </select>
+                </div>
+
+                <div class="messages" id="messages">
+                    <div class="message bot">
+                        👋 Hello! I'm your RAG AI assistant.
+                        <br><br>
+                        <strong>RAG Mode:</strong> Upload documents and ask questions about them
+                        <br>
+                        <strong>General Mode:</strong> Chat freely without documents for research & knowledge
+                    </div>
+                </div>
+
+                <div class="loading" id="loading">Thinking...</div>
+
+                <div class="input-area">
+                    <input
+                        type="text"
+                        id="chatInput"
+                        placeholder="Ask a question..."
+                        onkeypress="if(event.key==='Enter') sendMessage()"
+                    >
+                    <button class="btn" onclick="sendMessage()">Send</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // File upload handling
+        document.getElementById('fileInput').addEventListener('change', async function(e) {
+            const file = e.target.files[0];
+            if (file) {
+                const statusDiv = document.getElementById('ingestStatus');
+
+                // Check file type
+                const allowedTypes = ['text/plain', 'application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'application/msword'];
+                const fileName = file.name.toLowerCase();
+                const isAllowed = fileName.endsWith('.txt') || fileName.endsWith('.pdf') ||
+                                fileName.endsWith('.docx') || fileName.endsWith('.doc') ||
+                                fileName.endsWith('.md');
+
+                if (!isAllowed) {
+                    statusDiv.className = 'status error';
+                    statusDiv.textContent = '❌ Unsupported file type. Please upload TXT, PDF, DOCX, or MD files.';
+                    return;
+                }
+
+                // Show uploading status
+                statusDiv.className = 'status';
+                statusDiv.textContent = '⏳ Uploading and processing file...';
+                statusDiv.style.display = 'block';
+
+                // Upload file directly
+                const formData = new FormData();
+                formData.append('file', file);
+
+                try {
+                    const response = await fetch('/api/ingest', {
+                        method: 'POST',
+                        body: formData
+                    });
+
+                    const data = await response.json();
+
+                    if (response.ok) {
+                        statusDiv.className = 'status success';
+                        statusDiv.textContent = `✅ ${data.message}`;
+                        document.getElementById('textInput').value = '';
+                        document.getElementById('fileInput').value = '';
+                    } else {
+                        statusDiv.className = 'status error';
+                        statusDiv.textContent = `❌ Error: ${data.error}`;
+                    }
+                } catch (error) {
+                    statusDiv.className = 'status error';
+                    statusDiv.textContent = `❌ Error: ${error.message}`;
+                }
+            }
+        });
+
+        // Ingest document
+        async function ingestDocument() {
+            const text = document.getElementById('textInput').value.trim();
+            const statusDiv = document.getElementById('ingestStatus');
+
+            if (!text) {
+                statusDiv.className = 'status error';
+                statusDiv.textContent = '❌ Please provide some text to ingest';
+                return;
+            }
+
+            statusDiv.className = 'status';
+            statusDiv.textContent = '⏳ Ingesting document...';
+            statusDiv.style.display = 'block';
+
+            try {
+                const response = await fetch('/api/ingest', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        text: text,
+                        metadata: {
+                            source: 'web_upload',
+                            timestamp: new Date().toISOString()
+                        }
+                    })
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    statusDiv.className = 'status success';
+                    statusDiv.textContent = `✅ ${data.message}`;
+                    document.getElementById('textInput').value = '';
+                } else {
+                    statusDiv.className = 'status error';
+                    statusDiv.textContent = `❌ Error: ${data.error}`;
+                }
+            } catch (error) {
+                statusDiv.className = 'status error';
+                statusDiv.textContent = `❌ Error: ${error.message}`;
+            }
+        }
+
+        // Send chat message
+        async function sendMessage() {
+            const input = document.getElementById('chatInput');
+            const query = input.value.trim();
+            const mode = document.getElementById('chatMode').value;
+
+            if (!query) return;
+
+            // Add user message
+            addMessage(query, 'user');
+            input.value = '';
+
+            // Show loading
+            document.getElementById('loading').classList.add('show');
+
+            try {
+                const response = await fetch('/api/chat', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        query: query,
+                        mode: mode
+                    })
+                });
+
+                const data = await response.json();
+
+                // Hide loading
+                document.getElementById('loading').classList.remove('show');
+
+                if (response.ok) {
+                    let botMessage = data.answer;
+
+                    // Show mode indicator
+                    const modeLabel = data.mode === 'general' ? '🌐 General Chat' : '📚 RAG Mode';
+
+                    if (data.sources && data.sources.length > 0) {
+                        botMessage += `<div class="sources">${modeLabel} - Used ${data.sources.length} document sources</div>`;
+                    } else if (data.mode === 'general') {
+                        botMessage += `<div class="sources">${modeLabel}</div>`;
+                    }
+
+                    addMessage(botMessage, 'bot');
+                } else {
+                    addMessage(`❌ Error: ${data.error}`, 'bot');
+                }
+            } catch (error) {
+                document.getElementById('loading').classList.remove('show');
+                addMessage(`❌ Error: ${error.message}`, 'bot');
+            }
+        }
+
+        // Add message to chat
+        function addMessage(text, type) {
+            const messagesDiv = document.getElementById('messages');
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `message ${type}`;
+            messageDiv.innerHTML = text;
+            messagesDiv.appendChild(messageDiv);
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+        }
+    </script>
+</body>
+</html>
