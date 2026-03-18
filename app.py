@@ -113,7 +113,10 @@ if __name__ == '__main__':
     print("=" * 60)
     print("RAG AI Chatbot - Web Interface")
     print("=" * 60)
-    print("\nStarting server at http://localhost:5000")
-    print("Open your browser and go to: http://localhost:5000\n")
 
-    app.run(debug=True, host='0.0.0.0', port=5000)
+    # Get port from environment variable (for Render) or use 5000 for local
+    port = int(os.environ.get('PORT', 5000))
+    print(f"\nStarting server on port {port}")
+    print(f"Open your browser and go to: http://localhost:{port}\n")
+
+    app.run(debug=False, host='0.0.0.0', port=port)
