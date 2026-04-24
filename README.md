@@ -6,8 +6,7 @@ A powerful Retrieval-Augmented Generation (RAG) chatbot with a beautiful web int
 ![License](https://img.shields.io/badge/License-MIT-green.svg)
 ![Status](https://img.shields.io/badge/Status-Production%20Ready-brightgreen.svg)
 
- ![RAG Chatbot Screenshot](<img width="1890" height="1033" alt="Screenshot_AI_chatbot" src="https://github.com/user-attachments/assets/214bf00a-d96b-4d45-9d4e-6d80436611a0" />
-)
+ ![RAG Chatbot Screenshot](Screenshot_chatbot.png)
 
 ## Features
 
@@ -138,8 +137,7 @@ Navigate to: http://localhost:5000
 #### 2. Select Chat Mode
 
 Choose from the dropdown:
-- **Auto** - Tries RAG first, falls back to general if no documents
-- **RAG Only** - Only searches uploaded documents
+- **RAG Only** - Search uploaded documents only
 - **General Chat** - Direct LLM conversation without documents
 
 #### 3. Ask Questions
