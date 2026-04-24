@@ -46,9 +46,6 @@ def chat():
         use_rag = True
         if mode == 'general':
             use_rag = False
-        elif mode == 'auto':
-            # Auto mode: try RAG first, fallback to general if no documents
-            use_rag = True
 
         print(f"[INFO] Processing query in {'RAG' if use_rag else 'GENERAL'} mode: {query[:50]}...")
         result = chatbot.chat(query, use_rag=use_rag)
