@@ -4,443 +4,444 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>RAG AI Chatbot</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif; }
+        
+        :root {
+            --bg-card: rgba(30, 41, 59, 0.85);
+            --bg-input: rgba(51, 65, 85, 0.8);
+            --text-primary: #f8fafc;
+            --text-secondary: #94a3b8;
+            --border: rgba(51, 65, 85, 0.5);
+            --accent: #8b5cf6;
         }
-
+        
+        [data-theme="light"] {
+            --bg-card: rgba(255, 255, 255, 0.85);
+            --bg-input: rgba(241, 245, 249, 0.8);
+            --text-primary: #0f172a;
+            --text-secondary: #64748b;
+            --border: rgba(226, 232, 240, 0.5);
+        }
+        
+        body { background: var(--bg-primary); color: var(--text-primary); min-height: 100vh; transition: all 0.3s; }
+        .glass-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 24px; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.25); }
+        .btn-gradient { background: linear-gradient(135deg, #8b5cf6, #06b6d4); transition: all 0.2s; }
+        .btn-gradient:hover { transform: translateY(-2px); box-shadow: 0 10px 20px rgba(139, 92, 246, 0.3); }
+        .upload-area { border: 2px dashed var(--border); border-radius: 16px; transition: all 0.2s; }
+        .upload-area:hover { border-color: var(--accent); background: rgba(139, 92, 246, 0.1); }
+        .message { padding: 16px; border-radius: 20px; max-width: 80%; animation: slideIn 0.3s; }
+        @keyframes slideIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        .message-user { background: var(--accent); color: white; align-self: flex-end; margin-left: auto; border-bottom-right-radius: 4px; }
+        .message-bot { background: var(--bg-input); color: var(--text-primary); align-self: flex-start; border-bottom-left-radius: 4px; }
+        .message-bot .sources { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border); font-size: 12px; color: var(--text-secondary); }
+        .online-dot { width: 8px; height: 8px; background: #22c55e; border-radius: 50%; animation: pulse 2s infinite; }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+        .typing-dot { width: 8px; height: 8px; background: var(--text-secondary); border-radius: 50%; animation: bounce 1.4s infinite; }
+        @keyframes bounce { 0%, 80%, 100% { transform: translateY(0); } 40% { transform: translateY(-8px); } }
+        
+        .scrollbar-thin::-webkit-scrollbar { width: 6px; }
+        .scrollbar-thin::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+        
+        /* Animated gradient background */
+        @keyframes gradient-shift {
+            0% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+            100% { background-position: 0% 50%; }
+        }
+        
+        .animated-gradient {
+            background: linear-gradient(-45deg, #8b5cf6, #06b6d4, #ec4899, #8b5cf6);
+            background-size: 400% 400%;
+            animation: gradient-shift 5s ease infinite;
+        }
+        
+        @keyframes glow-pulse {
+            0%, 100% { box-shadow: 0 0 20px rgba(139, 92, 246, 0.4); }
+            50% { box-shadow: 0 0 30px rgba(139, 92, 246, 0.7); }
+        }
+        
+        .glow-effect {
+            animation: glow-pulse 2s ease-in-out infinite;
+        }
+        
+        @keyframes float {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-5px); }
+        }
+        
+        .float-animation {
+            animation: float 3s ease-in-out infinite;
+        }
+        
+        /* Background */
+        .background-wrapper {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: -1;
+        }
+        
+        .gradient-bg {
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #0f172a 100%);
+        }
+        
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            height: 100vh;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            padding: 20px;
-        }
-
-        .container {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 20px;
-            max-width: 1400px;
-            width: 100%;
-            height: 90vh;
-        }
-
-        .panel {
-            background: white;
-            border-radius: 15px;
-            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
-            display: flex;
-            flex-direction: column;
-            overflow: hidden;
-        }
-
-        .panel-header {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            padding: 20px;
-            font-size: 20px;
-            font-weight: 600;
-        }
-
-        .panel-content {
-            flex: 1;
-            padding: 20px;
-            overflow-y: auto;
-            display: flex;
-            flex-direction: column;
-        }
-
-        /* Ingest Panel */
-        .upload-area {
-            border: 3px dashed #667eea;
-            border-radius: 10px;
-            padding: 40px;
-            text-align: center;
-            margin-bottom: 20px;
-            cursor: pointer;
-            transition: all 0.3s;
-        }
-
-        .upload-area:hover {
-            background: #f8f9ff;
-            border-color: #764ba2;
-        }
-
-        .upload-icon {
-            font-size: 48px;
-            margin-bottom: 10px;
-        }
-
-        textarea {
-            width: 100%;
-            min-height: 200px;
-            padding: 15px;
-            border: 2px solid #e0e0e0;
-            border-radius: 10px;
-            font-size: 14px;
-            resize: vertical;
-            font-family: inherit;
-        }
-
-        textarea:focus {
-            outline: none;
-            border-color: #667eea;
-        }
-
-        .btn {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            border: none;
-            padding: 12px 30px;
-            border-radius: 8px;
-            font-size: 16px;
-            font-weight: 600;
-            cursor: pointer;
-            transition: transform 0.2s;
-            margin-top: 15px;
-        }
-
-        .btn:hover {
-            transform: translateY(-2px);
-        }
-
-        .btn:disabled {
-            opacity: 0.5;
-            cursor: not-allowed;
-        }
-
-        .status {
-            margin-top: 15px;
-            padding: 10px;
-            border-radius: 8px;
-            display: none;
-        }
-
-        .status.success {
-            background: #d4edda;
-            color: #155724;
-            display: block;
-        }
-
-        .status.error {
-            background: #f8d7da;
-            color: #721c24;
-            display: block;
-        }
-
-        /* Chat Panel */
-        .messages {
-            flex: 1;
-            overflow-y: auto;
-            margin-bottom: 20px;
-            display: flex;
-            flex-direction: column;
-            gap: 15px;
-        }
-
-        .message {
-            padding: 15px;
-            border-radius: 10px;
-            max-width: 80%;
-            animation: slideIn 0.3s;
-        }
-
-        @keyframes slideIn {
-            from {
-                opacity: 0;
-                transform: translateY(10px);
-            }
-            to {
-                opacity: 1;
-                transform: translateY(0);
-            }
-        }
-
-        .message.user {
-            background: #667eea;
-            color: white;
-            align-self: flex-end;
-            margin-left: auto;
-        }
-
-        .message.bot {
-            background: #f0f0f0;
-            color: #333;
-            align-self: flex-start;
-        }
-
-        .message.bot .sources {
-            margin-top: 10px;
-            padding-top: 10px;
-            border-top: 1px solid #ddd;
-            font-size: 12px;
-            color: #666;
-        }
-
-        .input-area {
-            display: flex;
-            gap: 10px;
-        }
-
-        .input-area input {
-            flex: 1;
-            padding: 12px;
-            border: 2px solid #e0e0e0;
-            border-radius: 8px;
-            font-size: 14px;
-        }
-
-        .input-area input:focus {
-            outline: none;
-            border-color: #667eea;
-        }
-
-        .loading {
-            display: none;
-            text-align: center;
-            color: #667eea;
-            font-style: italic;
-        }
-
-        .loading.show {
-            display: block;
+            background: transparent;
+            min-height: 100vh;
         }
     </style>
 </head>
-<body>
-    <div class="container">
-        <!-- Document Ingest Panel -->
-        <div class="panel">
-            <div class="panel-header">
-                📄 Document Ingestion
-            </div>
-            <div class="panel-content">
-                <div class="upload-area" onclick="document.getElementById('fileInput').click()">
-                    <div class="upload-icon">📁</div>
-                    <div>Click to upload or drag & drop</div>
-                    <div style="font-size: 12px; color: #666; margin-top: 5px;">
-                        Supports: TXT, PDF, DOCX, MD
+<body class="p-4 md:p-8">
+    <div class="background-wrapper">
+        <div class="gradient-bg"></div>
+    </div>
+    
+    <div class="max-w-7xl mx-auto">
+        <!-- Header Card -->
+        <div class="glass-card mb-6 p-6">
+            <div class="flex items-center justify-between mb-6">
+                <div class="flex items-center gap-4">
+                    <div class="w-14 h-14 rounded-2xl animated-gradient flex items-center justify-center glow-effect">
+                        <svg class="w-7 h-7 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 10h.01M12 14h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"/>
+                        </svg>
                     </div>
-                    <input type="file" id="fileInput" style="display: none;" accept=".txt,.pdf,.docx,.md">
+                    <div class="float-animation">
+                        <h1 class="text-3xl font-bold" style="background: linear-gradient(135deg, #8b5cf6, #06b6d4); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">RAG AI Chatbot</h1>
+                        <p class="text-sm" style="color: var(--text-secondary)">Upload documents and chat with AI</p>
+                    </div>
                 </div>
-
-                <div style="margin-bottom: 10px; font-weight: 600;">Or paste text directly:</div>
-                <textarea id="textInput" placeholder="Paste your document text here..."></textarea>
-
-                <button class="btn" onclick="ingestDocument()">
-                    📤 Ingest Document
+                <button id="themeToggle" class="p-3 rounded-xl border" style="border-color: var(--border); color: var(--text-primary); cursor: pointer;">
+                    <svg id="sunIcon" class="w-6 h-6 hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"/>
+                    </svg>
+                    <svg id="moonIcon" class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"/>
+                    </svg>
                 </button>
-
-                <div id="ingestStatus" class="status"></div>
             </div>
-        </div>
-
-        <!-- Chat Panel -->
-        <div class="panel">
-            <div class="panel-header">
-                💬 Chat with AI
-            </div>
-            <div class="panel-content">
-                <!-- Mode Toggle -->
-                <div style="margin-bottom: 15px; display: flex; gap: 10px; align-items: center;">
-                    <label style="font-weight: 600;">Mode:</label>
-                    <select id="chatMode" style="padding: 8px; border-radius: 5px; border: 2px solid #e0e0e0; font-size: 14px;">
-                        <option value="rag">RAG Only (Search documents)</option>
-                        <option value="general">General Chat (No documents)</option>
-                    </select>
-                </div>
-
-                <div class="messages" id="messages">
-                    <div class="message bot">
-                        👋 Hello! I'm your RAG AI assistant.
-                        <br><br>
-                        <strong>RAG Mode:</strong> Upload documents and ask questions about them
-                        <br>
-                        <strong>General Mode:</strong> Chat freely without documents for research & knowledge
+            
+            <!-- Quick File Upload -->
+            <div id="uploadArea" class="upload-area p-8 text-center cursor-pointer">
+                <input type="file" id="fileInput" multiple accept=".txt,.pdf,.docx,.md" style="display: none;">
+                <div class="flex items-center justify-center gap-4">
+                    <svg class="w-8 h-8" style="color: var(--text-secondary)" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/>
+                    </svg>
+                    <div>
+                        <h3 class="text-lg font-semibold">Quick File Upload</h3>
+                        <p class="text-sm" style="color: var(--text-secondary)">Click or drag files here</p>
                     </div>
                 </div>
-
-                <div class="loading" id="loading">Thinking...</div>
-
-                <div class="input-area">
-                    <input
-                        type="text"
-                        id="chatInput"
-                        placeholder="Ask a question..."
-                        onkeypress="if(event.key==='Enter') sendMessage()"
-                    >
-                    <button class="btn" onclick="sendMessage()">Send</button>
+            </div>
+            <div id="fileStatus" class="mt-3 p-3 rounded-xl hidden"></div>
+            
+            <!-- Uploaded Files List -->
+            <div id="filesList" class="mt-4 hidden">
+                <div class="flex items-center justify-between mb-3">
+                    <h4 class="text-sm font-medium" style="color: var(--text-secondary)">Files ready to send (<span id="fileCount">0</span>)</h4>
+                    <button onclick="clearFiles()" class="text-xs px-3 py-1 rounded-full" style="color: var(--text-secondary)">Clear all</button>
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-2" id="filesContainer"></div>
+            </div>
+            
+            <!-- Text Input -->
+            <div class="mt-4">
+                <label class="text-sm font-medium mb-2 block" style="color: var(--text-secondary)">Or paste text directly:</label>
+                <textarea id="textInput" rows="4" placeholder="Paste your document text here..." 
+                    class="w-full p-4 rounded-xl border" style="background: var(--bg-input); border-color: var(--border); color: var(--text-primary);"></textarea>
+                <button onclick="ingestText()" class="btn-gradient text-white px-6 py-3 rounded-xl font-semibold mt-3">Ingest Document</button>
+            </div>
+            <div id="ingestStatus" class="mt-3 p-3 rounded-xl hidden"></div>
+        </div>
+        
+        <!-- Chat Card -->
+        <div class="glass-card">
+            <div class="px-6 py-4 border-b" style="border-color: var(--border)">
+                <div class="flex items-center justify-between">
+                    <div class="flex items-center gap-3">
+                        <div class="online-dot"></div>
+                        <h3 class="font-semibold">Chat with AI</h3>
+                        <span class="text-sm" style="color: var(--text-secondary)">Online</span>
+                    </div>
+                    <button onclick="clearChat()" class="text-sm px-3 py-1 rounded-lg border hover:bg-red-500/10" style="border-color: var(--border); color: var(--text-secondary)">
+                        New Chat
+                    </button>
+                </div>
+            </div>
+            
+            <div class="px-6 py-3 border-b flex items-center gap-4" style="border-color: var(--border)">
+                <label class="text-sm font-medium" style="color: var(--text-secondary)">Mode:</label>
+                <select id="chatMode" class="p-2 rounded-lg border" style="background: var(--bg-input); border-color: var(--border); color: var(--text-primary);">
+                    <option value="rag">RAG Mode (Search documents)</option>
+                    <option value="general">General Chat (No documents)</option>
+                </select>
+            </div>
+            
+            <div id="messages" class="h-96 overflow-y-auto p-6 space-y-4 scrollbar-thin">
+                <div class="message message-bot">
+                    <p>Hello! Upload documents and ask questions about them, or switch to General Chat.</p>
+                    <p class="text-xs opacity-60 mt-2" id="welcomeTime"></p>
+                </div>
+            </div>
+            
+            <div id="typingIndicator" class="hidden px-6 pb-4">
+                <div class="flex gap-1">
+                    <div class="typing-dot"></div>
+                    <div class="typing-dot" style="animation-delay: 0.2s"></div>
+                    <div class="typing-dot" style="animation-delay: 0.4s"></div>
+                </div>
+            </div>
+            
+            <div class="px-6 pb-6">
+                <div class="flex gap-3 items-end">
+                    <button onclick="document.getElementById('fileInput').click()" class="p-3 rounded-xl border" style="border-color: var(--border); color: var(--text-primary);" title="Attach files">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a4 4 0 105.657 5.656l6.414-6.586a2 2 0 00-2.828-2.828l-6.414 6.586a2 2 0 01-2.828 0l-6.586-6.586a2 2 0 010-2.828z"/>
+                        </svg>
+                    </button>
+                    <input id="chatInput" type="text" placeholder="Type your message..." class="flex-1 p-3 rounded-xl border" style="background: var(--bg-input); border-color: var(--border); color: var(--text-primary);">
+                    <button onclick="sendMessage()" class="btn-gradient text-white px-6 py-3 rounded-xl">Send</button>
                 </div>
             </div>
         </div>
     </div>
-
+    
     <script>
-        // File upload handling
-        document.getElementById('fileInput').addEventListener('change', async function(e) {
-            const file = e.target.files[0];
-            if (file) {
-                const statusDiv = document.getElementById('ingestStatus');
-
-                // Check file type
-                const allowedTypes = ['text/plain', 'application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'application/msword'];
-                const fileName = file.name.toLowerCase();
-                const isAllowed = fileName.endsWith('.txt') || fileName.endsWith('.pdf') ||
-                                fileName.endsWith('.docx') || fileName.endsWith('.doc') ||
-                                fileName.endsWith('.md');
-
-                if (!isAllowed) {
-                    statusDiv.className = 'status error';
-                    statusDiv.textContent = '❌ Unsupported file type. Please upload TXT, PDF, DOCX, or MD files.';
-                    return;
-                }
-
-                // Show uploading status
-                statusDiv.className = 'status';
-                statusDiv.textContent = '⏳ Uploading and processing file...';
-                statusDiv.style.display = 'block';
-
-                // Upload file directly
-                const formData = new FormData();
-                formData.append('file', file);
-
-                try {
-                    const response = await fetch('/api/ingest', {
-                        method: 'POST',
-                        body: formData
-                    });
-
-                    const data = await response.json();
-
-                    if (response.ok) {
-                        statusDiv.className = 'status success';
-                        statusDiv.textContent = `✅ ${data.message}`;
-                        document.getElementById('textInput').value = '';
-                        document.getElementById('fileInput').value = '';
-                    } else {
-                        statusDiv.className = 'status error';
-                        statusDiv.textContent = `❌ Error: ${data.error}`;
-                    }
-                } catch (error) {
-                    statusDiv.className = 'status error';
-                    statusDiv.textContent = `❌ Error: ${error.message}`;
-                }
-            }
+        let isDarkMode = true;
+        let uploadedFiles = [];
+        
+        document.getElementById('welcomeTime').textContent = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        
+        // Theme toggle
+        document.getElementById('themeToggle').addEventListener('click', () => {
+            isDarkMode = !isDarkMode;
+            document.documentElement.setAttribute('data-theme', isDarkMode ? 'dark' : 'light');
+            document.getElementById('sunIcon').classList.toggle('hidden', isDarkMode);
+            document.getElementById('moonIcon').classList.toggle('hidden', !isDarkMode);
         });
-
-        // Ingest document
-        async function ingestDocument() {
-            const text = document.getElementById('textInput').value.trim();
-            const statusDiv = document.getElementById('ingestStatus');
-
-            if (!text) {
-                statusDiv.className = 'status error';
-                statusDiv.textContent = '❌ Please provide some text to ingest';
+        
+        // File upload
+        const uploadArea = document.getElementById('uploadArea');
+        
+        uploadArea.addEventListener('click', () => document.getElementById('fileInput').click());
+        
+        uploadArea.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            uploadArea.style.borderColor = 'var(--accent)';
+        });
+        
+        uploadArea.addEventListener('dragleave', (e) => {
+            e.preventDefault();
+            uploadArea.style.borderColor = 'var(--border)';
+        });
+        
+        uploadArea.addEventListener('drop', (e) => {
+            e.preventDefault();
+            uploadArea.style.borderColor = 'var(--border)';
+            handleFiles(e.dataTransfer.files);
+        });
+        
+        document.getElementById('fileInput').addEventListener('change', (e) => handleFiles(e.target.files));
+        
+        async function handleFiles(files) {
+            if (!files.length) return;
+            
+            const validExt = ['.txt', '.pdf', '.docx', '.md'];
+            const newFiles = Array.from(files).filter(f => validExt.some(ext => f.name.toLowerCase().endsWith(ext)));
+            
+            if (newFiles.length === 0) {
+                showStatus('fileStatus', 'Unsupported file type', 'error');
                 return;
             }
-
-            statusDiv.className = 'status';
-            statusDiv.textContent = '⏳ Ingesting document...';
-            statusDiv.style.display = 'block';
-
+            
+            // Add files to list and show them
+            newFiles.forEach(f => {
+                uploadedFiles.push({
+                    id: Date.now() + Math.random(),
+                    name: f.name,
+                    size: f.size,
+                    file: f
+                });
+            });
+            
+            updateFilesList();
+            showStatus('fileStatus', 'Added ' + newFiles.length + ' file(s)', 'success');
+            
+            // Upload to server
+            const formData = new FormData();
+            formData.append('file', newFiles[0]);
+            
+            try {
+                const response = await fetch('/api/ingest', { method: 'POST', body: formData });
+                const data = await response.json();
+                if (response.ok) {
+                    showStatus('fileStatus', data.message, 'success');
+                } else {
+                    showStatus('fileStatus', data.error, 'error');
+                }
+            } catch (err) {
+                showStatus('fileStatus', err.message, 'error');
+            }
+        }
+        
+        function updateFilesList() {
+            const container = document.getElementById('filesContainer');
+            const listDiv = document.getElementById('filesList');
+            const countSpan = document.getElementById('fileCount');
+            
+            if (uploadedFiles.length === 0) {
+                listDiv.classList.add('hidden');
+                return;
+            }
+            
+            listDiv.classList.remove('hidden');
+            countSpan.textContent = uploadedFiles.length;
+            
+            container.innerHTML = uploadedFiles.map(f => `
+                <div class="flex items-center gap-3 p-3 rounded-xl border" style="border-color: var(--border); background: var(--bg-input);">
+                    <svg class="w-5 h-5" style="color: var(--accent)" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                    </svg>
+                    <div class="flex-1 min-w-0">
+                        <p class="text-sm font-medium truncate">${f.name}</p>
+                        <p class="text-xs" style="color: var(--text-secondary)">${formatSize(f.size)}</p>
+                    </div>
+                    <button onclick="removeFile(${f.id})" class="p-1 rounded-full hover:bg-red-500/20" style="color: var(--text-secondary)">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                        </svg>
+                    </button>
+                </div>
+            `).join('');
+        }
+        
+        function formatSize(bytes) {
+            if (bytes === 0) return '0 Bytes';
+            const k = 1024;
+            const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+        }
+        
+        function removeFile(id) {
+            uploadedFiles = uploadedFiles.filter(f => f.id !== id);
+            updateFilesList();
+        }
+        
+        function clearFiles() {
+            uploadedFiles = [];
+            updateFilesList();
+        }
+        
+        // Ingest text
+        async function ingestText() {
+            const text = document.getElementById('textInput').value.trim();
+            if (!text) { showStatus('ingestStatus', 'Please provide some text', 'error'); return; }
+            
+            showStatus('ingestStatus', 'Ingesting document...', 'success');
+            
             try {
                 const response = await fetch('/api/ingest', {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({
-                        text: text,
-                        metadata: {
-                            source: 'web_upload',
-                            timestamp: new Date().toISOString()
-                        }
-                    })
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ text: text, metadata: { source: 'web' } })
                 });
-
                 const data = await response.json();
-
                 if (response.ok) {
-                    statusDiv.className = 'status success';
-                    statusDiv.textContent = `✅ ${data.message}`;
+                    showStatus('ingestStatus', data.message, 'success');
                     document.getElementById('textInput').value = '';
                 } else {
-                    statusDiv.className = 'status error';
-                    statusDiv.textContent = `❌ Error: ${data.error}`;
+                    showStatus('ingestStatus', data.error, 'error');
                 }
-            } catch (error) {
-                statusDiv.className = 'status error';
-                statusDiv.textContent = `❌ Error: ${error.message}`;
+            } catch (err) {
+                showStatus('ingestStatus', err.message, 'error');
             }
         }
-
-        // Send chat message
+        
+        // Send message
         async function sendMessage() {
             const input = document.getElementById('chatInput');
             const query = input.value.trim();
-            const mode = document.getElementById('chatMode').value;
-
             if (!query) return;
-
-            // Add user message
-            addMessage(query, 'user');
+            
+            const mode = document.getElementById('chatMode').value;
+            const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            
+            addMessage(query, 'user', time);
             input.value = '';
-
-            // Show loading
-            document.getElementById('loading').classList.add('show');
-
+            
+            document.getElementById('typingIndicator').classList.remove('hidden');
+            scrollToBottom();
+            
             try {
                 const response = await fetch('/api/chat', {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({
-                        query: query,
-                        mode: mode
-                    })
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ query, mode })
                 });
-
                 const data = await response.json();
-
-                // Hide loading
-                document.getElementById('loading').classList.remove('show');
-
+                
+                document.getElementById('typingIndicator').classList.add('hidden');
+                const botTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                
                 if (response.ok) {
-                    let botMessage = data.answer;
-
-                    // Show mode indicator
-                    const modeLabel = data.mode === 'general' ? '🌐 General Chat' : '📚 RAG Mode';
-
-                    if (data.sources && data.sources.length > 0) {
-                        botMessage += `<div class="sources">${modeLabel} - Used ${data.sources.length} document sources</div>`;
-                    } else if (data.mode === 'general') {
-                        botMessage += `<div class="sources">${modeLabel}</div>`;
-                    }
-
-                    addMessage(botMessage, 'bot');
+                    let msg = data.answer;
+                    const label = data.mode === 'general' ? 'General Chat' : 'RAG Mode';
+                    if (data.sources?.length) msg += '<div class="sources">' + label + ' - ' + data.sources.length + ' sources</div>';
+                    else if (data.mode === 'rag') msg += '<div class="sources">' + label + ' - No documents</div>';
+                    addMessage(msg, 'bot', botTime);
                 } else {
-                    addMessage(`❌ Error: ${data.error}`, 'bot');
+                    addMessage('Error: ' + data.error, 'bot', botTime);
                 }
-            } catch (error) {
-                document.getElementById('loading').classList.remove('show');
-                addMessage(`❌ Error: ${error.message}`, 'bot');
+            } catch (err) {
+                document.getElementById('typingIndicator').classList.add('hidden');
+                addMessage('Error: ' + err.message, 'bot', new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
             }
         }
-
-        // Add message to chat
-        function addMessage(text, type) {
+        
+        function addMessage(text, type, time) {
+            const div = document.createElement('div');
+            div.className = 'message message-' + type;
+            div.innerHTML = '<p>' + text + '</p><p class="text-xs opacity-60 mt-2">' + time + '</p>';
+            document.getElementById('messages').appendChild(div);
+            scrollToBottom();
+        }
+        
+        function scrollToBottom() {
+            document.getElementById('messages').scrollTop = document.getElementById('messages').scrollHeight;
+        }
+        
+        function showStatus(id, msg, type) {
+            const el = document.getElementById(id);
+            el.textContent = msg;
+            el.className = 'mt-3 p-3 rounded-xl';
+            if (type === 'success') { el.style.background = 'rgba(34,197,94,0.1)'; el.style.color = '#22c55e'; }
+            else { el.style.background = 'rgba(239,68,68,0.1)'; el.style.color = '#ef4444'; }
+            el.classList.remove('hidden');
+            setTimeout(() => el.classList.add('hidden'), 5000);
+        }
+        
+        // Enter to send
+        document.getElementById('chatInput').addEventListener('keypress', (e) => { if (e.key === 'Enter') sendMessage(); });
+        
+        function clearChat() {
             const messagesDiv = document.getElementById('messages');
-            const messageDiv = document.createElement('div');
-            messageDiv.className = `message ${type}`;
-            messageDiv.innerHTML = text;
-            messagesDiv.appendChild(messageDiv);
-            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+            messagesDiv.innerHTML = `
+                <div class="message message-bot">
+                    <p>Hello! Upload documents and ask questions about them, or switch to General Chat.</p>
+                    <p class="text-xs opacity-60 mt-2">${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>
+                </div>
+            `;
+            document.getElementById('chatInput').value = '';
         }
     </script>
 </body>
