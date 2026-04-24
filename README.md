@@ -6,7 +6,8 @@ A powerful Retrieval-Augmented Generation (RAG) chatbot with a beautiful web int
 ![License](https://img.shields.io/badge/License-MIT-green.svg)
 ![Status](https://img.shields.io/badge/Status-Production%20Ready-brightgreen.svg)
 
- ![RAG Chatbot Screenshot](Screenshot_AI_chatbot)
+ ![RAG Chatbot Screenshot](<img width="1890" height="1033" alt="image" src="https://github.com/user-attachments/assets/3d62b271-08e6-4001-86c5-1e9b564d7a77" />
+)
 
 ## Features
 
