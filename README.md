@@ -473,4 +473,4 @@ If you find this project useful, please consider giving it a ⭐ on GitHub!
 
 ---
 
-**Built with ❤️ using Claude Code**
+**Built with ❤️ by Sharda Vatsal Bhat**
