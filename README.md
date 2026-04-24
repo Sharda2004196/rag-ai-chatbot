@@ -6,7 +6,7 @@ A powerful Retrieval-Augmented Generation (RAG) chatbot with a beautiful web int
 ![License](https://img.shields.io/badge/License-MIT-green.svg)
 ![Status](https://img.shields.io/badge/Status-Production%20Ready-brightgreen.svg)
 
- ![RAG Chatbot Screenshot](Screenshot_chatbot.png)
+![RAG Chatbot Screenshot](Screenshot_chatbot.png)
 
 ## Features
 
@@ -471,4 +471,4 @@ If you find this project useful, please consider giving it a ⭐ on GitHub!
 
 ---
 
-**Built with ❤️ using Claude Code**
+**Built with ❤️ by Sharda Vatsal Bhat**
