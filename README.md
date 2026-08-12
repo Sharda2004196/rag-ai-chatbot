@@ -411,7 +411,6 @@ git push heroku main
 - [ ] User authentication
 - [ ] Document management (list, delete documents)
 - [ ] Export chat history
-- [ ] Dark mode toggle
 - [ ] Mobile app
 
 ## Contributing
