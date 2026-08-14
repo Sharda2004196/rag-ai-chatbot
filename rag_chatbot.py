@@ -5,8 +5,6 @@ Uses: Groq (LLM), Cohere (Embeddings), Pinecone (Vector DB), Upstash Redis (Memo
 
 import os
 import re
-import io
-import wave
 import json
 from typing import List, Dict, Optional
 from dotenv import load_dotenv
@@ -16,7 +14,6 @@ from pinecone import Pinecone, ServerlessSpec
 import cohere
 import requests
 import base64
-from PIL import Image
 
 # Configuration
 GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")

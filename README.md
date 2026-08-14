@@ -1,475 +1,354 @@
 # RAG AI Chatbot
 
-A powerful Retrieval-Augmented Generation (RAG) chatbot with a beautiful web interface. Upload documents (PDF, DOCX, TXT, MD) and chat with AI about their content, or use general chat mode for research and knowledge.
+A production-style Retrieval-Augmented Generation (RAG) chatbot with a polished web interface. Upload documents (PDF, DOCX, TXT, MD), fetch content from URLs, or add images to the knowledge base — then ask questions and get **streamed, source-grounded answers** from a large language model.
+
+Built as a practical showcase of the full RAG pipeline: **document ingestion → chunking → vector embeddings → similarity search → LLM generation**, wrapped in a clean, glassmorphism web UI.
 
 ![Python](https://img.shields.io/badge/Python-3.10+-blue.svg)
 ![License](https://img.shields.io/badge/License-MIT-green.svg)
 ![Status](https://img.shields.io/badge/Status-Production%20Ready-brightgreen.svg)
 
-![RAG Chatbot Screenshot](Screenshot_AI_chatbot.png)
+![RAG Chatbot Screenshot](RAG_Chatbot_ss.png)
 
 
 
-## Features
+## Highlights
 
-- 📄 **Multi-Format Support** - Upload PDF, DOCX, TXT, and Markdown files
-- 🤖 **Dual Chat Modes** - RAG mode for documents, General mode for any topic
-- 💬 **Intelligent Q&A** - Get answers with source citations from your documents
-- 🎨 **Beautiful UI** - Modern, responsive web interface with gradient design
-- 🆓 **100% Free APIs** - No credit card required, generous free tiers
-- ⚡ **Fast Responses** - Powered by Groq's lightning-fast inference
-- 🔍 **Smart Search** - Vector similarity search with Qdrant
-- 📚 **Source Citations** - See which documents were used for each answer
+- **Dual chat modes** — RAG (answers grounded in your documents) and General (open conversation)
+- **Streaming responses** — token-by-token delivery over Server-Sent Events with a live "thinking" indicator
+- **Conversation memory** — per-session history stored in Redis (Upstash)
+- **Voice input** — offline speech-to-text via faster-whisper
+- **Multi-format ingestion** — PDF, DOCX, TXT, MD, plus text and image uploads
+- **URL fetching** — paste a link and chat about its content
+- **Glassmorphism UI** — dark/light themes, responsive layout, animated thinking dots
 
-## 🚀 Live Demo
+## Live Demo
 
-**Try it now:** [https://rag-ai-chatbot-0pyl.onrender.com](https://rag-ai-chatbot-0pyl.onrender.com)
-
-> Note: Free tier may take 50+ seconds to wake up after inactivity
-
-### Example Usage
-
-```
-User: "What are the key features of Python?"
-Bot: "Based on the uploaded document, Python's key features include:
-     - Easy to learn and use
-     - Extensive standard library
-     - Cross-platform compatibility
-     [RAG Mode - Used 2 document sources]"
-```
+**Try it live:** [https://rag-ai-chatbot-0pyl.onrender.com](https://rag-ai-chatbot-0pyl.onrender.com)
 
 ## Technology Stack
 
-| Component | Technology | Purpose |
-|-----------|-----------|---------|
-| **LLM** | Groq (Llama 3.3 70B) | Fast, intelligent responses |
-| **Embeddings** | Cohere (embed-english-v3.0) | Document vectorization |
-| **Vector DB** | Qdrant Cloud | Similarity search |
-| **Backend** | Flask | Web server & API |
-| **Document Parsing** | PyPDF2, python-docx | File processing |
+| Layer | Technology | Role |
+|-------|-----------|------|
+| **LLM** | Groq `llama-3.3-70b-versatile` | Fast inference, grounded answers |
+| **Embeddings** | Cohere `embed-v4.0` (1536-d) | Text + image vectorization |
+| **Vector DB** | Pinecone (serverless) | Dense similarity search |
+| **Memory** | Upstash Redis | Session history + context |
+| **Speech-to-Text** | faster-whisper (local, offline) | Voice queries |
+| **Backend** | Flask | REST + SSE API |
+| **Frontend** | Vanilla HTML/CSS/JS | Responsive glassmorphism UI |
+| **Parsing** | PyPDF2, python-docx, BeautifulSoup, trafilatura | Document + URL extraction |
+
+## Why This Stack (Design Decisions)
+
+Every layer was chosen deliberately — this is exactly what you'd discuss in a system-design or RAG interview:
+
+| Decision | Why |
+|----------|-----|
+| **Groq instead of OpenAI/Anthropic** | ~10x faster token generation on `llama-3.3-70b`, generous free tier (14,400 req/day). Critical for a *streaming* chat experience. |
+| **Cohere embed-v4.0 instead of OpenAI embeddings** | Single model handles **both text and images** (1536-dim, cross-modal). No need for a separate image encoder. |
+| **Pinecone serverless** | Zero infrastructure to manage. Auto-scaling, no idle timeouts on free tier (500K vectors). |
+| **Upstash Redis** | Serverless-compatible Redis. No persistent connection to babysit — works perfectly on free-tier hosting like Render. |
+| **faster-whisper (local STT)** | CTranslate2-optimized Whisper — runs on CPU in <1s per query. No cloud STT cost, no latency, no data leaves the machine. |
+| **Vanilla JS frontend** | Zero build step. One HTML file serves the whole UI — trivial to deploy anywhere. |
+| **SSE instead of WebSockets** | One-way streaming is exactly what chat needs. SSE rides on plain HTTP — simpler than WebSocket lifecycle, works through proxies/CDNs. |
+
+## Architecture
+
+```
+User Input
+   │  (text / file / URL / voice / image)
+   ▼
+Flask API  ──►  /api/chat/stream (SSE)
+   │
+   ├─►  RAG Mode:
+   │      query ──► Cohere embed ──► Pinecone top-k search ──► context ──┐
+   │                                                                     ├──► Groq LLM ──► streamed answer
+   └─►  General Mode:                                                     │
+          query ─────────────────────────────────────────────────────►────┘
+
+Redis (Upstash)  ──►  session history injected as context
+faster-whisper    ──►  /api/transcribe for voice queries
+BeautifulSoup / trafilatura ──►  /api/fetch-url for web content
+```
+
+### How the RAG pipeline works (step by step)
+
+1. **Ingestion** — a document arrives (file / paste / URL / image).
+2. **Parsing** — `document_parser.py` extracts raw text per format (PyPDF2 for PDF, python-docx for DOCX, plain reader for TXT/MD).
+3. **Chunking** — text is split into overlapping chunks (default 1000 chars, 200 overlap) to keep semantic units intact and give the retriever many small, focused pieces to match against.
+4. **Embedding** — each chunk is vectorized with Cohere `embed-v4.0` into a 1536-dimension vector.
+5. **Indexing** — vectors are upserted into a Pinecone serverless index (`rag-documents`, cosine distance).
+6. **Query time** — the user's question is embedded, then `search()` runs a cosine similarity top-k query (default k=5) against the index.
+7. **Relevance filter** — results below a similarity threshold (default 0.30) are discarded, so the LLM never sees irrelevant context.
+8. **Context assembly** — top chunks + the last 6 turns of conversation history are formatted into a strict prompt.
+9. **Generation** — Groq's `llama-3.3-70b-versatile` answers **only from the retrieved sources**, streamed back token-by-token over SSE.
+10. **Memory** — the exchange is saved to Upstash Redis for the session, so follow-up questions ("what about its second point?") work naturally.
+
+### Fallback behaviour
+
+- RAG mode with **no relevant documents** → automatically degrades to a general LLM answer instead of failing (graceful degradation).
+- URL fetch with BeautifulSoup → falls back to **trafilatura** if extraction yields too little content.
+- Image upload → embedded via Cohere's visual embedding; the Groq vision description is attempted and skipped gracefully on failure.
 
 ## Quick Start
 
 ### Prerequisites
 
-- Python 3.10 or higher
-- Internet connection for API calls
+- Python 3.10+
+- Free API keys (Groq, Cohere, Pinecone, Upstash Redis)
 
-### Installation
+### 1. Clone & install
 
-1. **Clone the repository**
 ```bash
-git clone <your-repo-url>
+git clone https://github.com/Sharda2004196/rag-ai-chatbot.git
 cd rag-ai-chatbot
-```
-
-2. **Install dependencies**
-```bash
 pip install -r requirements.txt
 ```
 
-3. **Get API Keys** (all free!)
+### 2. Configure API keys
 
-#### Groq API Key
-- Visit: https://console.groq.com/
-- Sign up for a free account
-- Navigate to API Keys section
-- Create and copy your API key
-- **Free Tier**: 14,400 requests/day
-
-#### Cohere API Key
-- Visit: https://dashboard.cohere.com/
-- Sign up for a free account
-- Go to API Keys section
-- Copy your API key
-- **Free Tier**: 100 calls/minute
-
-#### Qdrant Cloud
-- Visit: https://cloud.qdrant.io/
-- Sign up for a free account
-- Create a new cluster (Europe region recommended)
-- Copy the cluster URL (format: `https://xxx.eu-west-2-0.aws.cloud.qdrant.io:6333`)
-- Copy the API key from cluster settings
-- **Free Tier**: 1GB storage
-
-4. **Configure environment variables**
-
-Create a `.env` file in the project root:
-
-```env
-# Groq API Key
-GROQ_API_KEY=gsk_your_groq_api_key_here
-
-# Cohere API Key
-COHERE_API_KEY=your_cohere_api_key_here
-
-# Qdrant Cloud Configuration
-QDRANT_URL=https://your-cluster.eu-west-2-0.aws.cloud.qdrant.io:6333
-QDRANT_API_KEY=your_qdrant_api_key_here
+```bash
+cp .env.example .env
 ```
 
-5. **Run the application**
+Then fill in the keys:
+
+```env
+GROQ_API_KEY=your_groq_key
+COHERE_API_KEY=your_cohere_key
+PINECONE_API_KEY=your_pinecone_key
+UPSTASH_REDIS_URL=your_redis_url
+UPSTASH_REDIS_TOKEN=your_redis_token
+```
+
+All services offer generous free tiers — no credit card required.
+
+### 3. Run
 
 ```bash
 python app.py
 ```
 
-6. **Open your browser**
+Open **http://localhost:5000** in your browser.
 
-Navigate to: http://localhost:5000
+## Usage
 
-## Usage Guide
+### Chat modes
 
-### Web Interface
+- **RAG mode** — the app retrieves the most relevant document chunks (top-k with a relevance threshold) and the LLM answers strictly from that context.
+- **General mode** — direct LLM conversation, no document grounding.
 
-#### 1. Upload Documents
+### Feeding the knowledge base
 
-**Option A: File Upload**
-- Click the upload area or drag & drop files
-- Supported formats: PDF, DOCX, DOC, TXT, MD
-- Max file size: 16MB
-- Wait for "Ingested X chunks" confirmation
+- **Upload files** — PDF, DOCX, TXT, MD (up to 16 MB)
+- **Paste text** — ingest raw text directly
+- **Fetch a URL** — extracts readable article content (BeautifulSoup, with trafilatura fallback)
+- **Upload an image** — embedded with a vision embedding model and added to the knowledge base
 
-**Important:** Each new document upload replaces the previous one. This ensures clean, accurate responses without data mixing.
+### Voice queries
 
-**Option B: Paste Text**
-- Paste text directly into the text area
-- Click "Ingest Document"
+Click the mic button, speak, and the transcription is inserted into the input box automatically (faster-whisper runs locally).
 
-#### 2. Select Chat Mode
+## Example Interaction
 
-Choose from the dropdown:
-- **RAG Only** - Search uploaded documents only
-- **General Chat** - Direct LLM conversation without documents
+```
+User:  "What are the key features of Python according to the document?"
+Bot:   "Based on the uploaded document, Python's key features include:
+       - Easy to learn and read
+       - Extensive standard library
+       - Dynamic typing and garbage collection
+       - Cross-platform compatibility"        [RAG mode · 2 sources]
 
-#### 3. Ask Questions
-
-**RAG Mode Examples:**
-- "What is this document about?"
-- "Summarize the main points"
-- "What does it say about [topic]?"
-- "Explain [specific concept] from the document"
-
-**General Mode Examples:**
-- "What is machine learning?"
-- "Explain quantum computing"
-- "How does photosynthesis work?"
-
-### Command Line Interface
-
-```bash
-python rag_chatbot.py
+User:  "Can you elaborate on the standard library part?"
+Bot:   "The standard library provides modules for file I/O, networking,
+       math, and web development out of the box, which means..."        [context from memory]
 ```
 
-**Commands:**
-```bash
-# Ingest text
-/ingest Your document text here...
+## API Reference
 
-# Ask questions
-What is the main topic?
+### `POST /api/chat` — non-streaming chat
 
-# Exit
-/quit
+```json
+{ "query": "What is this document about?", "mode": "rag", "session_id": "abc123" }
 ```
+
+```json
+{
+  "answer": "This document covers...",
+  "sources": [{ "text": "...", "score": 0.87, "metadata": {} }],
+  "mode": "rag"
+}
+```
+
+### `POST /api/chat/stream` — streaming chat (SSE)
+
+Returns `data: {"type":"text","content":"..."}` events, terminated by `data: {"type":"done",...}`.
+
+```
+data: {"type":"text","content":"Based"}
+data: {"type":"text","content":" on the document"}
+data: {"type":"done","answer":"Based on the document...","mode":"rag"}
+```
+
+### `POST /api/transcribe` — voice-to-text
+
+Multipart `file` upload (webm/mp3/wav) → `{ "text": "..." }`.
+
+### `POST /api/fetch-url` — URL content extraction
+
+```json
+{ "url": "https://example.com/article" }
+```
+
+### `POST /api/upload-image` — image ingestion
+
+Multipart `image` upload (png/jpg/jpeg/gif/webp).
+
+### `POST /api/ingest` — document/text ingestion
+
+File upload via `file` field, or `{ "text": "..." }` for raw text.
+
+### `GET /api/history` · `POST /api/clear-history`
+
+Fetch or clear the conversation history for a session.
+
+### Response shape (all endpoints)
+
+- `200` — success with a JSON body (or SSE stream)
+- `400` — bad request (missing file / unsupported type / no query)
+- `500` — server error with `{ "error": "<message>" }`
 
 ## Project Structure
 
 ```
 rag-ai-chatbot/
-├── app.py                  # Flask web server & API endpoints
-├── rag_chatbot.py          # Core RAG logic & chatbot class
-├── document_parser.py      # PDF/DOCX/TXT parsing utilities
+├── app.py                  # Flask server, REST + SSE endpoints
+├── rag_chatbot.py          # Core RAG logic, vector ops, LLM + streaming
+├── document_parser.py      # PDF/DOCX/TXT parsing
 ├── requirements.txt        # Python dependencies
-├── .env                    # API keys (create this, not in git)
-├── .env.example           # Example environment variables
+├── .env.example            # Environment variable template
+├── render.yaml             # Render deployment config
 ├── templates/
-│   └── index.html         # Web interface UI
-├── README.md              # This file
-└── CLAUDE.md              # Development session history
-```
-
-## API Endpoints
-
-### POST /api/ingest
-Ingest a document into the knowledge base.
-
-**Request (File Upload):**
-```bash
-curl -X POST http://localhost:5000/api/ingest \
-  -F "file=@document.pdf"
-```
-
-**Request (Text):**
-```json
-{
-  "text": "Your document text here",
-  "metadata": {
-    "source": "manual",
-    "timestamp": "2026-03-18"
-  }
-}
-```
-
-**Response:**
-```json
-{
-  "success": true,
-  "chunks": 20,
-  "message": "Ingested 20 chunks"
-}
-```
-
-### POST /api/chat
-Chat with the AI assistant.
-
-**Request:**
-```json
-{
-  "query": "What is Python?",
-  "mode": "auto"
-}
-```
-
-**Response:**
-```json
-{
-  "answer": "Python is a high-level programming language...",
-  "sources": [
-    {
-      "text": "Python is a high-level...",
-      "score": 0.89,
-      "metadata": {"source": "file_upload"}
-    }
-  ],
-  "mode": "rag"
-}
+│   └── index.html          # Web interface (single file)
+└── README.md
 ```
 
 ## Configuration
 
-### Chunking Settings
+| Setting | Location | Default |
+|---------|----------|---------|
+| Chunk size / overlap | `rag_chatbot.py` `_chunk_text()` | 1000 / 200 chars |
+| Retrieval top-k | `rag_chatbot.py` `search()` | 5 |
+| Relevance threshold | `rag_chatbot.py` `search()` | 0.30 |
+| LLM temperature | `rag_chatbot.py` `_call_groq()` | 0.7 |
+| LLM max tokens | `rag_chatbot.py` `_call_groq()` | 2000 |
+| Max upload size | `app.py` `MAX_CONTENT_LENGTH` | 16 MB |
+| Whisper model | `rag_chatbot.py` `_get_stt_model()` | `base.en` (int8, CPU) |
 
-Edit `rag_chatbot.py` to adjust chunking:
+### Tuning the retriever
 
-```python
-chunks = self._chunk_text(text, chunk_size=1000, overlap=200)
-```
+- **Smaller documents / precise Q&A** → lower `top_k` (e.g. 3) and raise `min_score` to ~0.4 for precision.
+- **Broad summarisation tasks** → raise `top_k` (e.g. 8) and lower `min_score` to ~0.2 for recall.
+- **Conversation quality** → raise temperature to 0.8; for factual answers keep 0.2–0.5.
 
-- `chunk_size`: Characters per chunk (default: 1000)
-- `overlap`: Overlapping characters between chunks (default: 200)
+## Rate Limits & Free Tiers
 
-### Search Settings
+| Service | Free Tier Limit | What happens at the limit |
+|---------|----------------|---------------------------|
+| **Groq** | ~14,400 req/day, ~30 req/min | API returns `429`; retry after the reset window |
+| **Cohere** | 100 API calls/min (trial) | API returns `429`; raise rate or upgrade |
+| **Pinecone** | 500K vectors, serverless on-demand | No hard daily cap; billing scales with usage |
+| **Upstash Redis** | ~10K commands/day free | Database paused/archived after prolonged inactivity |
 
-Adjust number of retrieved documents:
-
-```python
-search_results = self.search(query, top_k=5)  # Change top_k value
-```
-
-### LLM Settings
-
-Modify temperature and max tokens in `_call_groq()`:
-
-```python
-data = {
-    "model": "llama-3.3-70b-versatile",
-    "temperature": 0.7,  # 0.0 = deterministic, 1.0 = creative
-    "max_tokens": 2000   # Maximum response length
-}
-```
-
-## API Rate Limits
-
-| Service | Free Tier Limits |
-|---------|-----------------|
-| **Groq** | 14,400 requests/day, 30 requests/minute |
-| **Cohere** | 100 API calls/minute |
-| **Qdrant** | 1GB storage, unlimited requests |
-
-## Troubleshooting
-
-### Issue: "charmap codec can't encode character"
-**Solution**: Fixed in latest version. All Unicode characters replaced with ASCII-safe alternatives.
-
-### Issue: "400 Bad Request" from Groq
-**Solution**: Model updated to `llama-3.3-70b-versatile`. Ensure you're using the latest code.
-
-### Issue: "Collection not found"
-**Solution**: Collection is created automatically on first run. Restart the application.
-
-### Issue: "Unauthorized" error
-**Solution**:
-- Check API keys in `.env` file
-- Ensure no extra spaces or quotes around keys
-- Verify keys are valid on respective dashboards
-
-### Issue: Slow responses
-**Possible causes:**
-- Internet connection issues
-- Qdrant cluster region (Europe has ~100-150ms latency from Asia)
-- Large documents (try smaller chunks)
-
-### Issue: PDF parsing fails
-**Solution**:
-- Ensure PDF is not password-protected
-- Some scanned PDFs may not have extractable text
-- Try converting to text first
-
-## Development
-
-### Running Tests
-
-```bash
-# Test document parser
-python -c "from document_parser import parse_document; print(parse_document('test.txt'))"
-
-# Test RAG chatbot
-python rag_chatbot.py
-```
-
-### Adding New File Formats
-
-Edit `document_parser.py` and add parsing logic:
-
-```python
-def parse_new_format(file_path: str) -> str:
-    # Your parsing logic here
-    return extracted_text
-```
+> The app makes **1–3** Groq calls per chat turn (0 for general mode when no docs), so the daily quota comfortably covers hundreds of conversations. Embedding calls are batched per ingestion.
 
 ## Deployment
 
-### Deploy to Render (Recommended)
+### Render (recommended)
 
-This project is deployed on Render. To deploy your own instance:
+This repo includes `render.yaml`. Deploy directly:
 
-1. **Fork this repository** on GitHub
+1. Push this repository to GitHub.
+2. In Render, create a **New Web Service** and connect the repo.
+3. Render auto-detects `render.yaml` (build + start commands, env var sync).
+4. Add the required environment variables in the Render dashboard.
 
-2. **Sign up for Render** at https://render.com
+> Free-tier services may spin down after inactivity (cold start of ~50s on first request).
 
-3. **Create a new Web Service**
-   - Connect your GitHub account
-   - Select your forked repository
-   - Render will auto-detect settings from `render.yaml`
+### Any cloud / VPS
 
-4. **Add Environment Variables** in Render dashboard:
-   ```
-   GROQ_API_KEY=your_groq_api_key
-   COHERE_API_KEY=your_cohere_api_key
-   QDRANT_URL=https://your-cluster.qdrant.io:6333
-   QDRANT_API_KEY=your_qdrant_api_key
-   ```
-
-5. **Deploy** - Render will automatically build and deploy your app
-
-**Important Notes:**
-- Free tier spins down after inactivity (50s wake-up time)
-- First deployment takes 3-5 minutes
-- Auto-deploys on every git push to main branch
-
-### Deploy to Railway
-
-1. Create `railway.json`:
-```json
-{
-  "build": {
-    "builder": "NIXPACKS"
-  },
-  "deploy": {
-    "startCommand": "python app.py"
-  }
-}
-```
-
-2. Add environment variables in Railway dashboard
-3. Deploy from GitHub
-
-### Deploy to Heroku
-
-1. Create `Procfile`:
-```
-web: python app.py
-```
-
-2. Create `runtime.txt`:
-```
-python-3.10.0
-```
-
-3. Deploy:
 ```bash
-heroku create your-app-name
-git push heroku main
+pip install -r requirements.txt
+python app.py
 ```
+
+Set the five environment variables and expose port 5000.
+
+## Troubleshooting
+
+ Here's the honest engineering log from this project:
+
+### 1. "charmap codec can't encode character" crash
+- **Cause**: Unicode characters (✓, ❌, emoji) printed to a Windows console with `cp1252` encoding.
+- **Fix**: Replaced non-ASCII status symbols with ASCII-safe `[OK]`, `[ERROR]`, `[Sources]` throughout the logging paths.
+
+### 2. Groq 400 Bad Request
+- **Cause**: The original `llama-3.1-70b-versatile` model was decommissioned upstream.
+- **Fix**: Migrated to `llama-3.3-70b-versatile` (verified live at `rag_chatbot.py`).
+
+### 3. Pinecone "index not found" on first run
+- **Cause**: No index existed yet.
+- **Fix**: The app now creates the `rag-documents` index automatically on startup if missing (`rag_chatbot.py` `_init_index()`), then verifies readiness before use.
+
+### 4. "Unauthorized" / 401 errors from any provider
+- **Fix**: Check `.env` keys have no extra spaces/quotes; confirm keys are active in the provider dashboard; verify the app loaded them (debug log prints key length).
+
+### 5. Slow responses
+- **Cause**: Free-tier cold start, large documents, or 30s Groq timeout under load.
+- **Fix**: Keep chunks ~1000 chars; use `load_dom`-style fast paths; upgrade service or accept cold-start on free tier.
+
+### 6. PDF parses to empty text
+- **Cause**: Scanned/image-only PDFs contain no extractable text layer; password-protected PDFs fail.
+- **Fix**: Use OCR for scanned PDFs; unlock password-protected files before upload. PyPDF2 only reads text layers.
+
+### 7. Voice input gives no transcription
+- **Cause**: First run downloads the Whisper `base.en` model (~75MB); missing model = silent failure.
+- **Fix**: Allow the one-time model download; ensure a stable connection. Transcriptions run locally afterwards.
+
+### 8. RAG answers "I don't have enough information"
+- **Cause**: No documents ingested for the session, or retrieved chunks scored below the 0.30 relevance threshold.
+- **Fix**: Upload relevant documents, or switch to General mode for open conversation.
+
+### 9. URL fetch returns short/empty content
+- **Cause**: JavaScript-rendered sites, paywalls, or anti-bot blocks.
+- **Fix**: The code auto-falls back to `trafilatura`; for JS-heavy sites the extracted content may still be limited.
 
 ## Roadmap
 
-- [ ] Add conversation history/memory
-- [ ] Support for more file formats (CSV, JSON, XML)
-- [ ] Multi-language support
-- [ ] User authentication
-- [ ] Document management (list, delete documents)
-- [ ] Export chat history
-- [ ] Mobile app
+- [x] Conversation memory (Redis)
+- [x] Streaming responses
+- [x] Voice input (faster-whisper)
+- [x] URL content ingestion
+- [x] Image ingestion
+- [ ] Reranking of retrieved chunks
+- [ ] Hybrid search (BM25 + dense)
+- [ ] Grounding / hallucination evaluation harness
+- [ ] Document management (list, delete)
 
 ## Contributing
 
-Contributions are welcome! Please feel free to submit a Pull Request.
+Contributions are welcome! Open an issue or submit a pull request.
 
 1. Fork the repository
-2. Create your feature branch (`git checkout -b feature/AmazingFeature`)
-3. Commit your changes (`git commit -m 'Add some AmazingFeature'`)
-4. Push to the branch (`git push origin feature/AmazingFeature`)
-5. Open a Pull Request
+2. Create a feature branch (`git checkout -b feature/your-feature`)
+3. Commit your changes
+4. Push and open a Pull Request
 
 ## License
 
-This project is licensed under the MIT License - see below for details:
-
-```
-MIT License
-
-Copyright (c) 2026
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
-```
-
-## Acknowledgments
-
-- [Groq](https://groq.com/) - Lightning-fast LLM inference
-- [Cohere](https://cohere.com/) - Powerful embedding models
-- [Qdrant](https://qdrant.tech/) - High-performance vector database
-- [Flask](https://flask.palletsprojects.com/) - Lightweight web framework
-
-## Support
-
-If you encounter any issues or have questions:
-
-1. Check the [Troubleshooting](#troubleshooting) section
-2. Review [CLAUDE.md](CLAUDE.md) for development history
-3. Open an issue on GitHub
-
-## Star History
-
-If you find this project useful, please consider giving it a ⭐ on GitHub!
+This project is licensed under the MIT License.
 
 ---
 
-**Built with ❤️ by Sharda Vatsal Bhat**
+Built with Python, Flask, and the Groq · Cohere · Pinecone ecosystems.

@@ -11,3 +11,7 @@ services:
         sync: false
       - key: PINECONE_API_KEY
         sync: false
+      - key: UPSTASH_REDIS_URL
+        sync: false
+      - key: UPSTASH_REDIS_TOKEN
+        sync: false
