@@ -87,7 +87,6 @@ BeautifulSoup / trafilatura ──►  /api/fetch-url for web content
 
 ### Fallback behaviour
 
-- RAG mode with **no relevant documents** → automatically degrades to a general LLM answer instead of failing (graceful degradation).
 - URL fetch with BeautifulSoup → falls back to **trafilatura** if extraction yields too little content.
 - Image upload → embedded via Cohere's visual embedding; the Groq vision description is attempted and skipped gracefully on failure.
 
