@@ -58,8 +58,18 @@ test_*.docx
 instance/
 .webassets-cache
 
-# Qdrant local storage (if using local mode)
-qdrant_storage/
+# Pinecone local storage (if using local mode)
+pinecone_storage/
 
 # Claude Code
 .claude/
+
+# Internal development docs (not for public showcase)
+CLAUDE.md
+.prd.md
+.tsd.md
+
+# Local infra / keep-alive helpers
+keepalive.py
+setup_keepalive.bat
+.github/workflows/redis-keepalive.yml

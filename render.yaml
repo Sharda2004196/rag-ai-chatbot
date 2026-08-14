@@ -9,7 +9,5 @@ services:
         sync: false
       - key: COHERE_API_KEY
         sync: false
-      - key: QDRANT_URL
-        sync: false
-      - key: QDRANT_API_KEY
+      - key: PINECONE_API_KEY
         sync: false
