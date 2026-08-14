@@ -30,7 +30,8 @@ Built as a practical showcase of the full RAG pipeline: **document ingestion →
 
 | Layer | Technology | Role |
 |-------|-----------|------|
-| **LLM** | Groq `llama-3.3-70b-versatile` | Fast inference, grounded answers |
+| **LLM (text)** | Groq `llama-3.3-70b-versatile` | Fast inference, grounded answers |
+| **LLM (vision)** | Groq `qwen/qwen3.6-27b` | Image description/analysis |
 | **Embeddings** | Cohere `embed-v4.0` (1536-d) | Text + image vectorization |
 | **Vector DB** | Pinecone (serverless) | Dense similarity search |
 | **Memory** | Upstash Redis | Session history + context |
@@ -45,9 +46,10 @@ Every layer was chosen deliberately — this is exactly what you'd discuss in a 
 
 | Decision | Why |
 |----------|-----|
-| **Groq instead of OpenAI/Anthropic** | ~10x faster token generation on `llama-3.3-70b`, generous free tier (14,400 req/day). Critical for a *streaming* chat experience. |
+| **Groq instead of OpenAI/Anthropic** | ~10x faster token generation on `llama-3.3-70b`, generous free tier (1,000 req/day). Critical for a *streaming* chat experience. |
+| **Dedicated vision model** | A separate Groq model (`qwen/qwen3.6-27b`) handles image input, keeping `llama-3.3-70b` for text generation — each with its own quota. |
 | **Cohere embed-v4.0 instead of OpenAI embeddings** | Single model handles **both text and images** (1536-dim, cross-modal). No need for a separate image encoder. |
-| **Pinecone serverless** | Zero infrastructure to manage. Auto-scaling, no idle timeouts on free tier (500K vectors). |
+| **Pinecone serverless** | Zero infrastructure to manage. Auto-scaling Starter tier (~300–350K vectors free) for development. |
 | **Upstash Redis** | Serverless-compatible Redis. No persistent connection to babysit — works perfectly on free-tier hosting like Render. |
 | **faster-whisper (local STT)** | CTranslate2-optimized Whisper — runs on CPU in <1s per query. No cloud STT cost, no latency, no data leaves the machine. |
 | **Vanilla JS frontend** | Zero build step. One HTML file serves the whole UI — trivial to deploy anywhere. |
@@ -119,9 +121,13 @@ COHERE_API_KEY=your_cohere_key
 PINECONE_API_KEY=your_pinecone_key
 UPSTASH_REDIS_URL=your_redis_url
 UPSTASH_REDIS_TOKEN=your_redis_token
+
+# Optional: override the default Groq models
+GROQ_LLM_MODEL=llama-3.3-70b-versatile
+GROQ_VISION_MODEL=qwen/qwen3.6-27b
 ```
 
-All services offer generous free tiers — no credit card required.
+All services offer generous free tiers — no credit card required. The Groq model env vars are optional — defaults are used if omitted.
 
 ### 3. Run
 
@@ -255,12 +261,13 @@ rag-ai-chatbot/
 
 | Service | Free Tier Limit | What happens at the limit |
 |---------|----------------|---------------------------|
-| **Groq** | ~14,400 req/day, ~30 req/min | API returns `429`; retry after the reset window |
-| **Cohere** | 100 API calls/min (trial) | API returns `429`; raise rate or upgrade |
-| **Pinecone** | 500K vectors, serverless on-demand | No hard daily cap; billing scales with usage |
-| **Upstash Redis** | ~10K commands/day free | Database paused/archived after prolonged inactivity |
+| **Groq — `llama-3.3-70b-versatile`** | 30 req/min, **1,000 req/day**, 12K tokens/min | API returns `429`; retry after the reset window |
+| **Groq — `qwen/qwen3.6-27b` (vision)** | 30 req/min, **1,000 req/day** | API returns `429`; retry after the reset window |
+| **Cohere — `embed-v4.0` (trial key)** | **1,000 API calls/month** total; Embed 2,000 inputs/min (text), 5 inputs/min (images) | API returns `429`; quota resets monthly |
+| **Pinecone (Starter)** | 1 serverless index, ~2 GB (~300–350K vectors at 1536-d) | Index becomes read-only / needs upgrade past storage |
+| **Upstash Redis** | **500K commands/month**, 256 MB | Commands rejected once the monthly cap is hit |
 
-> The app makes **1–3** Groq calls per chat turn (0 for general mode when no docs), so the daily quota comfortably covers hundreds of conversations. Embedding calls are batched per ingestion.
+> The app makes **1–3** Groq calls per chat turn, so the 1,000 req/day quota covers a few hundred conversations. Text embeddings are batched per ingestion (2,000 inputs/min is generous). Upstash's 500K commands/month is far beyond typical session-memory usage.
 
 ## Deployment
 

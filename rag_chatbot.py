@@ -26,6 +26,12 @@ INDEX_NAME = "rag-documents"
 EMBEDDING_SIZE = 1536  # Cohere embed-v4.0 (supports images and text)
 REDIS_SESSION_TTL = 86400  # 24 hours in seconds
 
+# Groq models — separate model for text/LLM vs. vision (image) input.
+# LLM model handles all text generation (RAG + General chat).
+# Vision model is used only for image analysis/description.
+GROQ_LLM_MODEL = os.getenv("GROQ_LLM_MODEL", "llama-3.3-70b-versatile")
+GROQ_VISION_MODEL = os.getenv("GROQ_VISION_MODEL", "qwen/qwen3.6-27b")
+
 class RAGChatbot:
     def __init__(self):
         # Initialize clients lazily (only when needed)
@@ -191,7 +197,7 @@ class RAGChatbot:
             }
             
             data = {
-                "model": "llama-3.3-70b-versatile",
+                "model": GROQ_VISION_MODEL,
                 "messages": [{
                     "role": "user",
                     "content": [
@@ -731,7 +737,7 @@ Answer:"""
         }
 
         data = {
-            "model": "llama-3.3-70b-versatile",
+            "model": GROQ_LLM_MODEL,
             "messages": [
                 {"role": "user", "content": prompt}
             ],
@@ -769,7 +775,7 @@ Answer:"""
         }
 
         data = {
-            "model": "llama-3.3-70b-versatile",
+            "model": GROQ_LLM_MODEL,
             "messages": [
                 {"role": "user", "content": prompt}
             ],
