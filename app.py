@@ -331,6 +331,15 @@ def clear_history():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+@app.route('/api/clear-documents', methods=['POST'])
+def clear_documents():
+    """Wipe all vectors from the Pinecone index"""
+    try:
+        chatbot.clear_documents()
+        return jsonify({'success': True, 'message': 'All documents cleared from index'})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 @app.route('/api/ingest', methods=['POST'])
 def ingest():
     """Document ingestion endpoint - supports both file upload and text"""

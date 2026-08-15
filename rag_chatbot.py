@@ -364,11 +364,18 @@ class RAGChatbot:
             return len(chunks)
 
     def fetch_url_content(self, url: str) -> str:
-        """Fetch content from a URL using BeautifulSoup (with trafilatura fallback)"""
+        """Fetch content from a URL using BeautifulSoup (with trafilatura fallback).
+        GitHub repo URLs are resolved to their raw README so nav noise never
+        pollutes the ingested content."""
         try:
             import requests
             from bs4 import BeautifulSoup
-            
+
+            # ---- GitHub repo URLs: fetch the raw README instead of the page ----
+            github_readme = self._fetch_github_readme(url)
+            if github_readme:
+                return github_readme
+
             # Fetch the URL
             headers = {'User-Agent': 'Mozilla/5.0'}
             response = requests.get(url, headers=headers, timeout=30)
@@ -412,6 +419,38 @@ class RAGChatbot:
                 raise Exception(f"Failed to fetch URL: {str(e)}. Install trafilatura as backup: pip install trafilatura")
             except Exception as e2:
                 raise Exception(f"Failed to fetch URL: {str(e2)}")
+
+    def _fetch_github_readme(self, url: str) -> str:
+        """Resolve a GitHub repo URL to its raw README.md content.
+
+        Returns the README text, or None if the URL isn't a resolvable GitHub
+        repo. Tries main/master/HEAD and both .md and .rst casing. This avoids
+        ingesting the ~30KB of page chrome (tabs, fork/star counts, sidebar)
+        that would otherwise drown out the actual README in retrieval."""
+        import re
+        m = re.match(r'^https?://github\.com/([^/]+)/([^/]+)/?.*$', url)
+        if not m:
+            return None
+        owner, repo = m.group(1), m.group(2)
+        repo = repo.rstrip('/').rstrip('.git')
+
+        candidates = [
+            f"https://raw.githubusercontent.com/{owner}/{repo}/HEAD/README.md",
+            f"https://raw.githubusercontent.com/{owner}/{repo}/main/README.md",
+            f"https://raw.githubusercontent.com/{owner}/{repo}/master/README.md",
+            f"https://raw.githubusercontent.com/{owner}/{repo}/HEAD/readme.md",
+            f"https://raw.githubusercontent.com/{owner}/{repo}/HEAD/README.rst",
+        ]
+        headers = {'User-Agent': 'Mozilla/5.0'}
+        for cand in candidates:
+            try:
+                resp = requests.get(cand, headers=headers, timeout=20)
+                if resp.status_code == 200 and len(resp.text) > 100:
+                    print(f"[OK] Fetched GitHub README from {cand}")
+                    return resp.text.strip()
+            except Exception:
+                continue
+        return None
 
     def _chunk_text(self, text: str, chunk_size: int = 1000, overlap: int = 200) -> List[str]:
         """Split text into semantic chunks.
@@ -758,6 +797,7 @@ Answer:"""
                 except:
                     raise Exception(f"Groq API Error {response.status_code}: {response.text}")
 
+            response.encoding = "utf-8"
             result = response.json()
             return result["choices"][0]["message"]["content"]
 
@@ -794,6 +834,10 @@ Answer:"""
                     raise Exception(f"Groq API Error: {error_msg}")
                 except:
                     raise Exception(f"Groq API Error {response.status_code}: {response.text}")
+
+            # Groq streams text/event-stream without a charset; requests would
+            # default to ISO-8859-1 and mangle UTF-8 (em-dashes, quotes) -> force UTF-8.
+            response.encoding = "utf-8"
 
             for line in response.iter_lines(decode_unicode=True):
                 if not line:
