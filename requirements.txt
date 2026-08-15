@@ -10,3 +10,4 @@ redis==7.4.0
 trafilatura==2.0.0
 beautifulsoup4==4.12.3
 faster-whisper==1.2.1
+rank-bm25==0.2.2

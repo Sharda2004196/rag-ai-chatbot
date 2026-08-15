@@ -1,0 +1,35 @@
+{
+  "_info": "Eval dataset for the RAG chatbot. Each item: question + golden answer (the ideal expected answer, used to score retrieval quality). Edit/add questions to match YOUR ingested documents. `min_facts` = minimum key phrases the answer must contain to count as a hit.",
+  "questions": [
+    {
+      "question": "What kind of memory does STARK AI use?",
+      "golden_answer": "STARK AI uses Mem0, an open-source memory layer for LLMs, with ChromaDB as the local vector database and Gemini embeddings for semantic search.",
+      "min_facts": 2
+    },
+    {
+      "question": "List the action modules present in the project.",
+      "golden_answer": "The action modules include Google Gemini Live API for real-time voice, Mem0 for memory, ChromaDB for vector storage, Playwright for browser automation, Composio for third-party app integrations, and notebooklm-py for NotebookLM.",
+      "min_facts": 3
+    },
+    {
+      "question": "Who developed STARK AI?",
+      "golden_answer": "STARK AI was developed by Sharda Vatsal Bhat (SVB).",
+      "min_facts": 1
+    },
+    {
+      "question": "Which API powers the real-time voice conversation?",
+      "golden_answer": "The real-time voice conversation is powered by Google Gemini Live API with bidirectional audio streaming.",
+      "min_facts": 2
+    },
+    {
+      "question": "What is the core purpose of STARK AI?",
+      "golden_answer": "STARK AI is a voice-controlled cross-platform AI personal assistant that sees the screen, controls the system, and automates tasks for PC and Android.",
+      "min_facts": 3
+    },
+    {
+      "question": "What is the name of the personal AI assistant?",
+      "golden_answer": "The assistant is called STARK AI, also known as J.A.R.V.I.S.",
+      "min_facts": 2
+    }
+  ]
+}

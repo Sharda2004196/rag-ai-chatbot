@@ -73,3 +73,8 @@ CLAUDE.md
 keepalive.py
 setup_keepalive.bat
 .github/workflows/redis-keepalive.yml
+
+# Local runtime data (auto-rebuilt from Pinecone / eval runs)
+bm25_corpus.json
+eval_report_*.json
+uploads/

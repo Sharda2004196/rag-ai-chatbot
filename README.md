@@ -30,7 +30,7 @@ Built as a practical showcase of the full RAG pipeline: **document ingestion →
 
 | Layer | Technology | Role |
 |-------|-----------|------|
-| **LLM (text)** | Groq `llama-3.3-70b-versatile` | Fast inference, grounded answers |
+| **LLM (text)** | Groq `openai/gpt-oss-120b` | Fast inference, grounded answers |
 | **LLM (vision)** | Groq `qwen/qwen3.6-27b` | Image description/analysis |
 | **Embeddings** | Cohere `embed-v4.0` (1536-d) | Text + image vectorization |
 | **Vector DB** | Pinecone (serverless) | Dense similarity search |
@@ -84,7 +84,7 @@ BeautifulSoup / trafilatura ──►  /api/fetch-url for web content
 6. **Query time** — the user's question is embedded, then `search()` runs a cosine similarity top-k query (default k=5) against the index.
 7. **Relevance filter** — results below a similarity threshold (default 0.30) are discarded, so the LLM never sees irrelevant context.
 8. **Context assembly** — top chunks + the last 6 turns of conversation history are formatted into a strict prompt.
-9. **Generation** — Groq's `llama-3.3-70b-versatile` answers **only from the retrieved sources**, streamed back token-by-token over SSE.
+9. **Generation** — Groq's `openai/gpt-oss-120b` answers **only from the retrieved sources**, streamed back token-by-token over SSE.
 10. **Memory** — the exchange is saved to Upstash Redis for the session, so follow-up questions ("what about its second point?") work naturally.
 
 ### Fallback behaviour
@@ -123,7 +123,7 @@ UPSTASH_REDIS_URL=your_redis_url
 UPSTASH_REDIS_TOKEN=your_redis_token
 
 # Optional: override the default Groq models
-GROQ_LLM_MODEL=llama-3.3-70b-versatile
+GROQ_LLM_MODEL=openai/gpt-oss-120b
 GROQ_VISION_MODEL=qwen/qwen3.6-27b
 ```
 
@@ -261,7 +261,7 @@ rag-ai-chatbot/
 
 | Service | Free Tier Limit | What happens at the limit |
 |---------|----------------|---------------------------|
-| **Groq — `llama-3.3-70b-versatile`** | 30 req/min, **1,000 req/day**, 12K tokens/min | API returns `429`; retry after the reset window |
+| **Groq — `openai/gpt-oss-120b`** | 30 req/min, **1,000 req/day**, 8K tokens/min | API returns `429`; retry after the reset window |
 | **Groq — `qwen/qwen3.6-27b` (vision)** | 30 req/min, **1,000 req/day** | API returns `429`; retry after the reset window |
 | **Cohere — `embed-v4.0` (trial key)** | **1,000 API calls/month** total; Embed 2,000 inputs/min (text), 5 inputs/min (images) | API returns `429`; quota resets monthly |
 | **Pinecone (Starter)** | 1 serverless index, ~2 GB (~300–350K vectors at 1536-d) | Index becomes read-only / needs upgrade past storage |
@@ -301,7 +301,7 @@ Set the five environment variables and expose port 5000.
 
 ### 2. Groq 400 Bad Request
 - **Cause**: The original `llama-3.1-70b-versatile` model was decommissioned upstream.
-- **Fix**: Migrated to `llama-3.3-70b-versatile` (verified live at `rag_chatbot.py`).
+- **Fix**: Migrated to `openai/gpt-oss-120b` (the current default at `rag_chatbot.py`). If a 400 ever appears again, a model was deprecated — check Groq's current models and update `GROQ_LLM_MODEL`.
 
 ### 3. Pinecone "index not found" on first run
 - **Cause**: No index existed yet.
@@ -330,6 +330,33 @@ Set the five environment variables and expose port 5000.
 - **Cause**: JavaScript-rendered sites, paywalls, or anti-bot blocks.
 - **Fix**: The code auto-falls back to `trafilatura`; for JS-heavy sites the extracted content may still be limited.
 
+## Retrieval & Evaluation
+
+The search pipeline uses **hybrid retrieval + reranking**:
+
+1. **Dense** — Cohere embeddings + Pinecone vector similarity (semantic meaning)
+2. **Sparse** — BM25 keyword search over a local chunk-text corpus (exact terms like product names or code)
+3. **Fusion** — Reciprocal Rank Fusion merges both ranked lists, so a chunk that ranks well in *either* method surfaces
+4. **Rerank** — Cohere cross-encoder re-scores the fused shortlist for final ordering
+
+Run the **evaluation harness** (RAGAS-style metrics, Groq as LLM judge):
+
+```bash
+py -3.11 evaluate.py --compare   # hybrid vs dense-only side-by-side
+py -3.11 evaluate.py --dataset my_eval.json
+```
+
+Sample result on the STARK AI knowledge base (`top_k=5`, 6 questions):
+
+| metric | hybrid+rerank | dense-only | delta |
+|---|---|---|---|
+| hit_rate@k | 1.000 | 1.000 | +0.000 |
+| mrr@k | 1.000 | 1.000 | +0.000 |
+| faithfulness | 0.967 | 0.167 | **+0.800** |
+| answer_relevancy | 0.900 | 0.467 | **+0.433** |
+
+The reranker is the big win: retrieval *coverage* was already fine, but reordering the chunks improved how well the LLM stays grounded in the sources.
+
 ## Roadmap
 
 - [x] Conversation memory (Redis)
@@ -337,10 +364,9 @@ Set the five environment variables and expose port 5000.
 - [x] Voice input (faster-whisper)
 - [x] URL content ingestion
 - [x] Image ingestion
-- [ ] Reranking of retrieved chunks
-- [ ] Hybrid search (BM25 + dense)
-- [ ] Grounding / hallucination evaluation harness
-- [ ] Document management (list, delete)
+- [x] Hybrid search (BM25 + dense via Reciprocal Rank Fusion)
+- [x] Reranking of retrieved chunks (Cohere cross-encoder)
+- [x] Grounding / hallucination evaluation harness
 
 ## Contributing
 

@@ -6,6 +6,7 @@ Uses: Groq (LLM), Cohere (Embeddings), Pinecone (Vector DB), Upstash Redis (Memo
 import os
 import re
 import json
+import hashlib
 from typing import List, Dict, Optional
 from dotenv import load_dotenv
 
@@ -25,11 +26,12 @@ UPSTASH_REDIS_TOKEN = os.getenv("UPSTASH_REDIS_TOKEN", "")
 INDEX_NAME = "rag-documents"
 EMBEDDING_SIZE = 1536  # Cohere embed-v4.0 (supports images and text)
 REDIS_SESSION_TTL = 86400  # 24 hours in seconds
+CORPUS_FILE = "bm25_corpus.json"  # Local mirror of chunk texts for BM25/hybrid search
 
 # Groq models — separate model for text/LLM vs. vision (image) input.
 # LLM model handles all text generation (RAG + General chat).
 # Vision model is used only for image analysis/description.
-GROQ_LLM_MODEL = os.getenv("GROQ_LLM_MODEL", "llama-3.3-70b-versatile")
+GROQ_LLM_MODEL = os.getenv("GROQ_LLM_MODEL", "openai/gpt-oss-120b")
 GROQ_VISION_MODEL = os.getenv("GROQ_VISION_MODEL", "qwen/qwen3.6-27b")
 
 class RAGChatbot:
@@ -40,6 +42,100 @@ class RAGChatbot:
         self._pinecone_index = None
         self._redis_client = None
         self._stt_model = None
+        # Local corpus for BM25/hybrid search: id -> {text, metadata}
+        self._corpus = {}
+        self._bm25 = None
+        self._load_corpus()
+
+    def _load_corpus(self):
+        """Load the local chunk-text corpus from disk (used by BM25/hybrid search)."""
+        try:
+            if os.path.exists(CORPUS_FILE):
+                with open(CORPUS_FILE, "r", encoding="utf-8") as f:
+                    self._corpus = json.load(f)
+                print(f"[OK] Loaded {len(self._corpus)} chunks from {CORPUS_FILE}")
+        except Exception as e:
+            print(f"[WARNING] Failed to load corpus: {e}")
+            self._corpus = {}
+
+    def _save_corpus(self):
+        """Persist the local chunk-text corpus to disk."""
+        try:
+            with open(CORPUS_FILE, "w", encoding="utf-8") as f:
+                json.dump(self._corpus, f, ensure_ascii=False)
+        except Exception as e:
+            print(f"[WARNING] Failed to save corpus: {e}")
+
+    def _build_bm25(self):
+        """Build (or rebuild) the BM25 index over the local corpus."""
+        try:
+            from rank_bm25 import BM25Okapi
+            tokenized = [self._tokenize(c["text"]) for c in self._corpus.values()]
+            self._bm25 = BM25Okapi(tokenized) if tokenized else None
+            print(f"[OK] BM25 index built over {len(tokenized)} chunks")
+        except Exception as e:
+            print(f"[WARNING] BM25 unavailable: {e}")
+            self._bm25 = None
+
+    def _rebuild_corpus_from_pinecone(self):
+        """Rebuild the local corpus by fetching every vector from Pinecone.
+
+        Used when the local corpus file is missing or stale (e.g. after a
+        deploy or if ingestion predates the BM25 feature). Pinecone is the
+        source of truth, so we hydrate the local mirror from it."""
+        try:
+            stats = self.pinecone_index.describe_index_stats()
+            total = stats.get('total_vector_count', 0)
+            if total == 0:
+                return
+
+            # list_paginated returns all vector IDs in pages
+            self._corpus = {}
+            pagination_token = None
+            seen = 0
+            while seen < total:
+                page = self.pinecone_index.list_paginated(
+                    limit=100,
+                    pagination_token=pagination_token
+                )
+                ids = [v.id for v in page.vectors]
+                if not ids:
+                    break
+                fetched = self.pinecone_index.fetch(ids=ids)
+                for vid, record in fetched.vectors.items():
+                    meta = record.metadata or {}
+                    text = meta.get("text", "")
+                    if text:
+                        self._corpus[vid] = {
+                            "text": text,
+                            "metadata": {k: v for k, v in meta.items() if k != "text"}
+                        }
+                seen += len(ids)
+                pagination_token = page.pagination
+                if not pagination_token:
+                    break
+
+            self._save_corpus()
+            self._build_bm25()
+            print(f"[OK] Corpus rebuilt from Pinecone: {len(self._corpus)} chunks")
+        except Exception as e:
+            print(f"[WARNING] Could not rebuild corpus from Pinecone: {e}")
+
+    def _ensure_bm25_ready(self):
+        """Make sure BM25 has a corpus to search. Hydrates from Pinecone if empty."""
+        if not self._corpus:
+            try:
+                if self.pinecone_index:
+                    self._rebuild_corpus_from_pinecone()
+            except Exception:
+                pass
+        if not self._bm25 and self._corpus:
+            self._build_bm25()
+
+    @staticmethod
+    def _tokenize(text: str) -> List[str]:
+        """Lowercase alphanumeric tokenizer for BM25."""
+        return re.findall(r"[a-z0-9]+", text.lower())
 
     @property
     def redis_client(self):
@@ -137,7 +233,7 @@ class RAGChatbot:
             traceback.print_exc()
 
     def clear_documents(self):
-        """Clear all documents from the index"""
+        """Clear all documents from the index (and the local BM25 corpus)"""
         try:
             # Get index stats first to check if any vectors exist
             try:
@@ -154,6 +250,10 @@ class RAGChatbot:
                 # Try to delete anyway
                 self.pinecone_index.delete(delete_all=True)
                 print(f"[OK] Cleared all documents from index: {INDEX_NAME}")
+            # Clear local corpus + BM25 index too
+            self._corpus = {}
+            self._bm25 = None
+            self._save_corpus()
         except Exception as e:
             print(f"[WARNING] Failed to clear documents: {e}")
 
@@ -305,16 +405,17 @@ class RAGChatbot:
             # Use the image description as the text content
             text_content = image_description
             
-            # Prepare metadata for Pinecone
-            record_metadata = metadata or {}
+            # Prepare metadata for Pinecone (copy so we don't mutate the caller's dict)
+            record_metadata = dict(metadata or {})
             record_metadata.update({
                 "text": text_content,
                 "chunk_index": "0",
                 "content_type": "image"
             })
 
-            # Generate unique ID
-            record_id = f"doc_{abs(hash(text_content)) % (10 ** 8)}"
+            # Generate deterministic unique ID (hash() is randomized per
+            # process, which would create duplicate vectors on re-ingest)
+            record_id = f"doc_{int(hashlib.md5(text_content.encode('utf-8')).hexdigest()[:12], 16)}"
             
             # Upsert to Pinecone (legacy API for custom vectors)
             self.pinecone_index.upsert(
@@ -324,6 +425,11 @@ class RAGChatbot:
                     "metadata": record_metadata
                 }]
             )
+
+            # Mirror into the local BM25 corpus for hybrid search
+            self._corpus[record_id] = {"text": text_content, "metadata": record_metadata}
+            self._save_corpus()
+            self._build_bm25()
             
             print(f"[OK] Ingested 1 image chunk with analysis")
             return 1
@@ -340,14 +446,19 @@ class RAGChatbot:
             # Prepare records for Pinecone
             records = []
             for idx, (chunk, embedding) in enumerate(zip(chunks, embeddings)):
-                record_metadata = metadata or {}
+                # IMPORTANT: copy the base metadata each iteration. Reusing the
+                # same dict object + .update() makes every record share one
+                # reference, so all vectors end up with the LAST chunk's text.
+                record_metadata = dict(metadata or {})
                 record_metadata.update({
                     "text": chunk,
                     "chunk_index": str(idx),
                     "content_type": content_type
                 })
 
-                record_id = f"doc_{abs(hash(chunk)) % (10 ** 8)}"
+                # Deterministic ID (hash() is randomized per process -> would create
+                # duplicate vectors on re-ingest of the same document)
+                record_id = f"doc_{int(hashlib.md5(chunk.encode('utf-8')).hexdigest()[:12], 16)}"
                 
                 records.append({
                     "id": record_id,
@@ -359,6 +470,15 @@ class RAGChatbot:
             self.pinecone_index.upsert(
                 vectors=records
             )
+
+            # Mirror chunks into the local BM25 corpus for hybrid search
+            for rec in records:
+                self._corpus[rec["id"]] = {
+                    "text": rec["metadata"]["text"],
+                    "metadata": {k: v for k, v in rec["metadata"].items()}
+                }
+            self._save_corpus()
+            self._build_bm25()
 
             print(f"[OK] Ingested {len(chunks)} chunks")
             return len(chunks)
@@ -511,44 +631,154 @@ class RAGChatbot:
         return [c for c in chunks if c.strip()]
 
     def search(self, query: str, top_k: int = 5, min_score: float = 0.3) -> List[Dict]:
-        """Search for relevant documents.
+        """Search for relevant documents using HYBRID search + reranking.
 
-        Uses embed_query (asymmetric query embedding) and filters out
-        results below min_score so irrelevant chunks are never passed to
-        the LLM. Cosine similarity for Cohere embed-v4.0 typically sits in
-        the 0.3-0.9 range for relevant matches.
+        Pipeline:
+          1. Dense retrieval — Pinecone vector similarity (semantic meaning).
+          2. Sparse retrieval — BM25 lexical keyword match over the local corpus.
+          3. Fusion — Reciprocal Rank Fusion (RRF) merges the two ranked lists
+             into one combined ranking, so a chunk that ranks well in EITHER
+             method surfaces even if the other misses it.
+          4. Rerank — a cross-encoder reranker (Cohere Rerank) re-scores the
+             fused candidates, pushing the most relevant chunks to the top.
+
+        Falls back gracefully to dense-only if BM25 or the reranker is
+        unavailable (e.g. missing keys), so the app never breaks.
         """
-        # Generate query embedding with the correct input type
         query_embedding = self.embed_query(query)
 
-        # Search in Pinecone (legacy API for custom vectors)
-        results = self.pinecone_index.query(
+        # ---- 0. Self-heal: make sure BM25 has a corpus to search ----
+        self._ensure_bm25_ready()
+
+        # ---- 1. Dense retrieval (Pinecone) ----
+        dense_hits = self.pinecone_index.query(
             vector=query_embedding,
-            top_k=top_k * 2,  # fetch extra, then filter by score
+            top_k=top_k * 3,  # fetch extra candidates for fusion/rerank
             include_metadata=True,
             include_values=False
         ).matches
 
-        # Filter by relevance threshold
-        filtered = [
-            hit for hit in results
-            if hit.score is not None and hit.score >= min_score
-        ][:top_k]
+        # ---- 2. Sparse retrieval (BM25 over local corpus) ----
+        bm25_hits = self._bm25_search(query, top_k=top_k * 3)
+
+        # ---- 3. Reciprocal Rank Fusion ----
+        fused = self._rrf_fuse(dense_hits, bm25_hits)
+
+        # ---- 4. Cross-encoder reranking ----
+        reranked = self._rerank(query, fused[: top_k * 3])
+
+        # Take the final top_k
+        results = reranked[:top_k]
 
         # Debug: Show what's in the database
-        print(f"[DEBUG] Search returned {len(results)} raw, {len(filtered)} above threshold {min_score}")
-        for i, r in enumerate(filtered[:3]):
-            text_preview = r.metadata.get('text', 'N/A')[:80] if r.metadata else 'N/A'
-            print(f"  Result {i+1}: (score={r.score:.3f}) {text_preview}...")
+        print(f"[DEBUG] Search: {len(dense_hits)} dense, {len(bm25_hits)} bm25, "
+              f"{len(fused)} fused, {len(reranked)} reranked -> returning {len(results)}")
+        for i, r in enumerate(results[:3]):
+            text_preview = r["text"][:80]
+            print(f"  Result {i+1}: (score={r['score']:.3f}) {text_preview}...")
 
+        return results
+
+    def _bm25_search(self, query: str, top_k: int = 10) -> List[Dict]:
+        """Lexical keyword search using BM25 over the local corpus."""
+        self._ensure_bm25_ready()
+        if not self._bm25 or not self._corpus:
+            return []
+        try:
+            scores = self._bm25.get_scores(self._tokenize(query))
+            # Rank corpus entries by BM25 score
+            ranked_idx = sorted(range(len(scores)), key=lambda i: scores[i], reverse=True)[:top_k]
+            corpus_items = list(self._corpus.values())
+            results = []
+            for i in ranked_idx:
+                item = corpus_items[i]
+                results.append({
+                    "id": list(self._corpus.keys())[i],
+                    "text": item["text"],
+                    "score": float(scores[i]),
+                    "metadata": item.get("metadata", {})
+                })
+            return results
+        except Exception as e:
+            print(f"[WARNING] BM25 search failed: {e}")
+            return []
+
+    def _rrf_fuse(self, dense_hits, bm25_hits: List[Dict], k: int = 60) -> List[Dict]:
+        """Reciprocal Rank Fusion.
+
+        For each document, add 1/(k + rank) for every ranking it appears in.
+        A document present in both lists gets a higher fused score than one
+        present in only a single list. k=60 is the standard smoothing constant.
+        """
+        from collections import defaultdict
+        fused_scores = defaultdict(float)
+        rank_meta = {}
+
+        # Dense list contributes its ranks
+        for rank, hit in enumerate(dense_hits):
+            doc_id = hit.id if hasattr(hit, "id") else hit.get("id")
+            if doc_id is None:
+                continue
+            fused_scores[doc_id] += 1.0 / (k + rank + 1)
+            meta = hit.metadata if hasattr(hit, "metadata") else hit.get("metadata", {})
+            rank_meta[doc_id] = {
+                "text": (meta or {}).get("text", ""),
+                "metadata": {kk: vv for kk, vv in (meta or {}).items() if kk != "text"}
+            }
+
+        # BM25 list contributes its ranks
+        for rank, hit in enumerate(bm25_hits):
+            doc_id = hit["id"]
+            fused_scores[doc_id] += 1.0 / (k + rank + 1)
+            rank_meta.setdefault(doc_id, {
+                "text": hit["text"],
+                "metadata": hit["metadata"]
+            })
+
+        # Sort by fused score descending
+        ordered = sorted(fused_scores.items(), key=lambda kv: kv[1], reverse=True)
         return [
             {
-                "text": hit.metadata.get("text", "") if hit.metadata else "",
-                "score": hit.score,
-                "metadata": {k: v for k, v in (hit.metadata or {}).items() if k != "text"}
+                "id": doc_id,
+                "text": rank_meta[doc_id]["text"],
+                "score": fused,
+                "metadata": rank_meta[doc_id]["metadata"]
             }
-            for hit in filtered
+            for doc_id, fused in ordered
         ]
+
+    def _rerank(self, query: str, candidates: List[Dict], top_n: int = 5) -> List[Dict]:
+        """Cross-encoder reranking using Cohere Rerank.
+
+        Cross-encoders attend to query+document together (unlike bi-encoders
+        which embed them separately), so they are far more accurate at judging
+        relevance — at the cost of being too slow to run over the whole corpus.
+        Hence: retrieve cheaply, rerank accurately on the shortlist.
+        Falls back to returning candidates unchanged if Rerank is unavailable.
+        """
+        if not candidates:
+            return []
+        try:
+            response = self.cohere_client.rerank(
+                query=query,
+                documents=[c["text"] for c in candidates],
+                top_n=min(top_n, len(candidates)),
+                model="rerank-english-v3.0"
+            )
+            results = []
+            for item in response.results:
+                idx = item.index
+                cand = candidates[idx]
+                results.append({
+                    "id": cand["id"],
+                    "text": cand["text"],
+                    "score": float(item.relevance_score),
+                    "metadata": cand["metadata"]
+                })
+            return results
+        except Exception as e:
+            print(f"[WARNING] Reranker unavailable, using fused order: {e}")
+            return candidates[:top_n]
 
     def _get_session_history(self, session_id: str) -> List[Dict]:
         """Get conversation history from Redis"""
