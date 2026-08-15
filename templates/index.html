@@ -1175,7 +1175,7 @@
     </div>
 
     <!-- Hidden file input -->
-    <input type="file" id="file" style="display:none" accept=".txt,.pdf,.docx,.doc,.md" onchange="handleFile(this)">
+    <input type="file" id="file" style="display:none" accept=".txt,.pdf,.docx,.doc,.md,.png,.jpg,.jpeg,.gif,.webp" onchange="handleFile(this)">
 
     <!-- ===== Custom Modal ===== -->
     <div class="modal-overlay" id="modalOverlay">
@@ -1377,9 +1377,10 @@
             const file = f.files[0];
             if (!file) return;
             setStatus('Uploading...', 'info');
+            const isImage = ['png', 'jpg', 'jpeg', 'gif', 'webp'].includes((file.name.split('.').pop() || '').toLowerCase());
             const fd = new FormData();
-            fd.append('file', file);
-            fetch('/api/ingest', { method: 'POST', body: fd })
+            fd.append(isImage ? 'image' : 'file', file);
+            fetch(isImage ? '/api/upload-image' : '/api/ingest', { method: 'POST', body: fd })
                 .then(r => r.json())
                 .then(d => {
                     if (d.success) setStatus('Uploaded: ' + d.chunks + ' chunks', 'success');
