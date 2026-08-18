@@ -46,8 +46,8 @@ Every layer was chosen deliberately — this is exactly what you'd discuss in a 
 
 | Decision | Why |
 |----------|-----|
-| **Groq instead of OpenAI/Anthropic** | ~10x faster token generation on `llama-3.3-70b`, generous free tier (1,000 req/day). Critical for a *streaming* chat experience. |
-| **Dedicated vision model** | A separate Groq model (`qwen/qwen3.6-27b`) handles image input, keeping `llama-3.3-70b` for text generation — each with its own quota. |
+| **Groq instead of OpenAI/Anthropic** | ~10x faster token generation on `openai/gpt-oss-120b`, generous free tier (1,000 req/day). Critical for a *streaming* chat experience. |
+| **Dedicated vision model** | A separate Groq model (`qwen/qwen3.6-27b`) handles image input, keeping `openai/gpt-oss-120b` for text generation — each with its own quota. |
 | **Cohere embed-v4.0 instead of OpenAI embeddings** | Single model handles **both text and images** (1536-dim, cross-modal). No need for a separate image encoder. |
 | **Pinecone serverless** | Zero infrastructure to manage. Auto-scaling Starter tier (~300–350K vectors free) for development. |
 | **Upstash Redis** | Serverless-compatible Redis. No persistent connection to babysit — works perfectly on free-tier hosting like Render. |
@@ -300,7 +300,7 @@ Set the five environment variables and expose port 5000.
 - **Fix**: Replaced non-ASCII status symbols with ASCII-safe `[OK]`, `[ERROR]`, `[Sources]` throughout the logging paths.
 
 ### 2. Groq 400 Bad Request
-- **Cause**: The original `llama-3.1-70b-versatile` model was decommissioned upstream.
+- **Cause**: The original `llama-3.3-70b-versatile` model was decommissioned upstream.
 - **Fix**: Migrated to `openai/gpt-oss-120b` (the current default at `rag_chatbot.py`). If a 400 ever appears again, a model was deprecated — check Groq's current models and update `GROQ_LLM_MODEL`.
 
 ### 3. Pinecone "index not found" on first run
