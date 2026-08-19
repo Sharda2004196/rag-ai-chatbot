@@ -1223,24 +1223,40 @@ Answer:"""
         return self._stt_model
 
     def transcribe_audio(self, audio_bytes: bytes) -> str:
-        """Transcribe audio bytes (WAV/MP3/OGG/WebM) to text using faster-whisper."""
+        """Transcribe audio bytes (WAV/MP3/OGG/WebM) to text using faster-whisper.
+
+        The temp file must use the container's REAL extension. Browsers record
+        webm/opus, and if those bytes are written to a `.wav` file, libav tries
+        to demux them as WAV and rejects valid audio. Sniff magic bytes to pick
+        the right suffix (WebM = 1A 45 DF A3, MP4 = ftyp, OGG = OggS, WAV = RIFF).
+        Returns "" for undecodable input instead of raising, so live 2.5s slices
+        never break the UI (a skipped slice is covered by the next one)."""
         import tempfile
         import os as _os
 
         model = self._get_stt_model()
 
         suffix = ".wav"
-        if isinstance(audio_bytes, bytes):
-            pass
+        if audio_bytes[:4] == b"\x1a\x45\xdf\xa3":
+            suffix = ".webm"
+        elif audio_bytes[4:8] == b"ftyp":
+            suffix = ".mp4"
+        elif audio_bytes[:4] == b"OggS":
+            suffix = ".ogg"
+        elif audio_bytes[:4] == b"RIFF":
+            suffix = ".wav"
 
         with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
             tmp.write(audio_bytes)
             tmp_path = tmp.name
 
         try:
-            segments, info = model.transcribe(tmp_path, beam_size=5, vad_filter=True)
+            segments, info = model.transcribe(tmp_path, beam_size=1, vad_filter=False)
             text = " ".join(seg.text.strip() for seg in segments).strip()
             return text
+        except Exception as e:
+            print(f"[WARNING] Could not transcribe audio slice: {e}")
+            return ""
         finally:
             try:
                 _os.unlink(tmp_path)

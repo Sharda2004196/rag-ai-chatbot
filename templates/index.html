@@ -1274,6 +1274,17 @@
             </div>
         </div>
 
+        <!-- Knowledge Base -->
+        <div class="sidebar-section">
+            <div class="sidebar-section-title">Knowledge Base</div>
+            <button class="sidebar-btn" onclick="addTextToKB()">
+                <span class="icon">✎</span> Add Text
+            </button>
+            <button class="sidebar-btn" onclick="fetchUrlPrompt()">
+                <span class="icon">🔗</span> Fetch URL
+            </button>
+        </div>
+
         <!-- History -->
         <div class="sidebar-section">
             <div class="sidebar-section-title">History</div>
@@ -1383,6 +1394,7 @@
             <div class="modal-title" id="modalTitle"></div>
             <div class="modal-body" id="modalBody"></div>
             <input type="text" class="modal-input" id="modalInput" style="display:none" placeholder="">
+            <textarea class="modal-input" id="modalTextarea" style="display:none; min-height:160px; resize:vertical" placeholder=""></textarea>
             <div class="modal-actions">
                 <button class="modal-btn modal-btn-cancel" id="modalCancel">Cancel</button>
                 <button class="modal-btn modal-btn-confirm" id="modalConfirm">OK</button>
@@ -1398,6 +1410,8 @@
          let rec = null;
          let recorder = null;
          let chunks = [];
+         let liveText = '';
+         let recStartMs = 0;
          let mediaStream = null;
          let viewStack = [];  // Stack for back navigation
 
@@ -1626,7 +1640,7 @@
         }
 
         /* ===== URL Fetch ===== */
-        function fetchUrl() {
+        function fetchUrlPrompt() {
             showPromptModal('Fetch URL', 'Enter the URL to fetch and ingest:', 'https://example.com').then(u => {
                 if (!u) return;
                 setStatus('Fetching...', 'info');
@@ -1637,6 +1651,25 @@
                         else setStatus('Failed: ' + d.error, 'error');
                     })
                     .catch(() => setStatus('Fetch error', 'error'));
+            });
+        }
+
+        /* ===== Add Text to Knowledge Base ===== */
+        function addTextToKB() {
+            showTextModal('Add Text to Knowledge Base', 'Paste or type text below. It will be chunked, embedded, and stored for RAG retrieval:').then(text => {
+                if (!text) return;
+                setStatus('Ingesting...', 'info');
+                fetch('/api/ingest', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ text: text, metadata: { source: 'manual_text' } })
+                })
+                    .then(r => r.json())
+                    .then(d => {
+                        if (d.success) setStatus('Ingested: ' + d.chunks + ' chunks', 'success');
+                        else setStatus('Failed: ' + d.error, 'error');
+                    })
+                    .catch(() => setStatus('Ingest error', 'error'));
             });
         }
 
@@ -1657,9 +1690,17 @@
                         ? 'audio/webm' : 'audio/mp4';
                     recorder = new MediaRecorder(stream, { mimeType });
                     chunks = [];
-                    recorder.ondataavailable = e => { if (e.data.size > 0) chunks.push(e.data); };
+                    liveText = '';
+                    recStartMs = Date.now();
+                    recorder.ondataavailable = e => {
+                        if (e.data.size > 0) {
+                            chunks.push(e.data);
+                            // Live incremental transcription: send this ~2.5s slice now
+                            if (recorder.state === 'recording') transcribeLive(e.data);
+                        }
+                    };
                     recorder.onstop = () => sendForTranscription();
-                    recorder.start();
+                    recorder.start(2500);
                     listening = true;
                     updateMicUI(true);
                     setStatus('Listening... Click mic to stop', 'info');
@@ -1681,21 +1722,48 @@
             listening = false;
             updateMicUI(false);
             if (chunks.length === 0) { setStatus('No audio captured', 'info'); return; }
-            setStatus('Transcribing...', 'info');
-            const blob = new Blob(chunks, { type: chunks[0].type || 'audio/webm' });
+            const recDurationMs = Date.now() - recStartMs;
+            // For short clips, do one final accurate pass over the full audio.
+            // For long recordings, the live transcript is already shown and accurate
+            // enough — no need to make the user wait again.
+            if (recDurationMs < 15000) {
+                setStatus('Transcribing...', 'info');
+                const blob = new Blob(chunks, { type: chunks[0].type || 'audio/webm' });
+                const fd = new FormData();
+                fd.append('file', blob, 'recording.webm');
+                fetch('/api/transcribe', { method: 'POST', body: fd })
+                    .then(r => r.json())
+                    .then(d => {
+                        if (d.text) {
+                            document.getElementById('chatInput').value = d.text.trim();
+                            setStatus('Ready', '');
+                        } else {
+                            setStatus('No speech detected', 'info');
+                        }
+                    })
+                    .catch(() => setStatus('Transcription failed', 'error'));
+            } else {
+                if (liveText) {
+                    document.getElementById('chatInput').value = liveText.trim();
+                    setStatus('Ready', '');
+                } else {
+                    setStatus('No speech detected', 'info');
+                }
+            }
+        }
+
+        function transcribeLive(blob) {
             const fd = new FormData();
-            fd.append('file', blob, 'recording.webm');
+            fd.append('file', blob, 'live.webm');
             fetch('/api/transcribe', { method: 'POST', body: fd })
                 .then(r => r.json())
                 .then(d => {
-                    if (d.text) {
-                        document.getElementById('chatInput').value = d.text.trim();
-                        setStatus('Ready', '');
-                    } else {
-                        setStatus('No speech detected', 'info');
+                    if (d.text && d.text.trim()) {
+                        liveText += (liveText ? ' ' : '') + d.text.trim();
+                        document.getElementById('chatInput').value = liveText;
                     }
                 })
-                .catch(() => setStatus('Transcription failed', 'error'));
+                .catch(() => { /* silent — final pass or next slice will cover it */ });
         }
 
         function updateMicUI(active) {
@@ -1783,6 +1851,38 @@
                 function onKey(e) { if (e.key === 'Enter') { cleanup(); resolve(inputEl.value.trim()); } }
                 inputEl.addEventListener('keypress', onKey);
                 document.getElementById('modalConfirm').addEventListener('click', () => { cleanup(); resolve(inputEl.value.trim()); });
+                document.getElementById('modalCancel').addEventListener('click', () => { cleanup(); resolve(null); });
+            });
+        }
+
+        function showTextModal(title, body, placeholder) {
+            return new Promise(resolve => {
+                const overlay = document.getElementById('modalOverlay');
+                const titleEl = document.getElementById('modalTitle');
+                const bodyEl = document.getElementById('modalBody');
+                const inputEl = document.getElementById('modalInput');
+                const textareaEl = document.getElementById('modalTextarea');
+                const confirmBtn = document.getElementById('modalConfirm');
+                const cancelBtn = document.getElementById('modalCancel');
+
+                titleEl.textContent = title;
+                bodyEl.textContent = body || '';
+                inputEl.style.display = 'none';
+                textareaEl.style.display = 'block';
+                textareaEl.value = '';
+                textareaEl.placeholder = placeholder || 'Type or paste your text here...';
+                confirmBtn.textContent = 'Ingest';
+                confirmBtn.className = 'modal-btn modal-btn-confirm';
+                overlay.classList.add('active');
+                textareaEl.focus();
+
+                function cleanup() {
+                    overlay.classList.remove('active');
+                    textareaEl.style.display = 'none';
+                    confirmBtn.replaceWith(confirmBtn.cloneNode(true));
+                    cancelBtn.replaceWith(cancelBtn.cloneNode(true));
+                }
+                document.getElementById('modalConfirm').addEventListener('click', () => { cleanup(); resolve(textareaEl.value.trim()); });
                 document.getElementById('modalCancel').addEventListener('click', () => { cleanup(); resolve(null); });
             });
         }
