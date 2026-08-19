@@ -8,7 +8,7 @@ Built as a practical showcase of the full RAG pipeline: **document ingestion →
 ![License](https://img.shields.io/badge/License-MIT-green.svg)
 ![Status](https://img.shields.io/badge/Status-Production%20Ready-brightgreen.svg)
 
-![RAG Chatbot Screenshot](RAG Chatbot SS.png)
+![RAG Chatbot Screenshot](assets/RAG_Chatbot_SS.png)
 
 
 
